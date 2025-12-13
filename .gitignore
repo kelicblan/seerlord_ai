@@ -62,3 +62,6 @@ cover/
 # Project specific
 logs/
 *.log
+
+# Version Control
+.svn/

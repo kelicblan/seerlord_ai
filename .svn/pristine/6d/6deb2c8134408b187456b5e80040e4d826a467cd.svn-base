@@ -1,3 +1,0 @@
-OPENAI_API_KEY=sk-...
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
-PLUGIN_DIR=app/plugins
