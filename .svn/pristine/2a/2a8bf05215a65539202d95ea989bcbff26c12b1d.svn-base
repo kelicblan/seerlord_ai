@@ -1,0 +1,12 @@
+
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+PLUGIN_DIR=app/plugins
+
+# 默认使用 Ollama 提供商，避免走 OpenAI 客户端
+MODEL=qwen3:8b
+API_BASE=https://5wk7872203ck.vicp.fun/v1
+# MODEL=qwen3-max
+# OPENAI_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+# OPENAI_API_KEY=sk-e17be1687470413d9141b0a2cf00a20d
+
+LANGCHAIN_TRACING_V2=true

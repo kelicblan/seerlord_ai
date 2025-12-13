@@ -1,0 +1,35 @@
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
+from app.core.config import settings
+
+@asynccontextmanager
+async def get_checkpointer() -> AsyncGenerator[AsyncPostgresSaver, None]:
+    """
+    提供一个异步的 PostgreSQL 检查点保存器 (Checkpointer)。
+    用于 LangGraph 的状态持久化。
+    """
+    # 建立连接池
+    # 注意：LangGraph 的 AsyncPostgresSaver 需要一个 connection string 或 pool
+    # 这里我们使用 context manager 来管理 connection pool 的生命周期
+    # 但在实际 LangServe 场景中，通常需要在 lifespan 中初始化
+    
+    # 简化实现：每次调用创建一个连接（生产环境建议使用全局 Pool）
+    # 为了与 LangGraph 最佳实践对齐，我们使用 AsyncPostgresSaver.from_conn_string
+    
+    async with AsyncPostgresSaver.from_conn_string(settings.DATABASE_URL) as checkpointer:
+        # 确保数据库表已创建
+        await checkpointer.setup()
+        yield checkpointer
+
+# 单例模式或全局变量可能更适合长期运行的 FastAPI 应用
+# 这里提供一个辅助函数来获取 pool 也是一种选择
+# 不过 LangServe 需要传入一个 checkpointer 实例到 compile(checkpointer=...)
+# 这通常发生在定义 Graph 时。
+#
+# 由于 Phase 4 要求在这里 setup，我们可能需要调整 master_graph.py 来接受这个 checkpointer
+# 或者在这里直接提供一个已经配置好的对象。
+
+# 修正：AsyncPostgresSaver 是一个 Context Manager，
+# 我们需要在 app 生命周期内保持它，或者在 Graph 编译时注入。

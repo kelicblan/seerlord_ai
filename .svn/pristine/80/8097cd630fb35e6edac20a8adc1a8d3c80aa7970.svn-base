@@ -1,0 +1,76 @@
+# SeerLord AI
+
+SeerLord AI is a modular AI platform built on a **Micro-Kernel + Plugin Architecture**. It leverages LangGraph for powerful agent orchestration and supports flexible plugin extensions, designed to provide developers with an efficient and scalable framework for AI application development.
+
+## 🌟 Key Features
+
+- **Micro-Kernel Architecture**: A lightweight and stable core system responsible for lifecycle management, context sharing, and resource scheduling.
+- **Plugin System**: All business capabilities (such as news reporting, tutorial generation, financial analysis, etc.) are implemented via plugins, enabling plug-and-play functionality.
+- **Agent Orchestration (LangGraph)**: Utilizes LangGraph to build complex stateful multi-agent workflows.
+- **MCP Support**: Integrates the Model Context Protocol (MCP) for standardized context and tool interactions.
+- **High-Performance Backend**: An asynchronous backend built with FastAPI, supporting SSE streaming responses.
+
+## 🛠️ Tech Stack
+
+- **Language**: Python 3.11+
+- **Frameworks**: FastAPI, LangChain, LangGraph
+- **Database**: PostgreSQL (AsyncPG)
+- **Utilities**: Pydantic, Loguru, SSE-Starlette
+
+## 📂 Directory Structure
+
+```
+seerlord_ai/
+├── server/
+│   ├── core/           # Core configuration & LLM wrappers
+│   ├── kernel/         # Micro-kernel implementation (Registry, MCP Manager, Memory Manager)
+│   ├── plugins/        # Plugins directory (contains various Agent implementations)
+│   └── main.py         # Application entry point
+├── mcp_services/       # MCP service implementations
+├── scripts/            # Utility scripts
+└── pyproject.toml      # Project dependencies configuration
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.11 or higher
+- PostgreSQL Database
+
+### Installation
+
+It is recommended to use Poetry or pip for installation.
+
+```bash
+# Install dependencies using pip
+pip install -r requirements.txt
+```
+
+### Configuration
+
+Copy the example environment variable file and modify the configuration:
+
+```bash
+cp .env.example .env
+# Edit the .env file to configure your OpenAI API Key and database connection details
+```
+
+### Start the Service
+
+```bash
+# Start the backend service
+python server/main.py
+```
+
+## 📄 License
+
+This project is open-sourced under the [MIT License](LICENSE).
+
+You are free to:
+- ✅ Use it commercially
+- ✅ Modify the code
+- ✅ Distribute copies
+- ✅ Use it privately
+
+Just include the original license and copyright notice in any copy of the software/source.

@@ -1,0 +1,117 @@
+import importlib
+import pkgutil
+import os
+import sys
+import inspect
+from typing import Dict, List, Type
+from pathlib import Path
+import logging
+
+from app.kernel.interface import AgentPlugin
+from app.core.config import settings
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
+class PluginRegistry:
+    """
+    插件注册表（单例模式）。
+    负责扫描、加载和管理所有的代理插件。
+    """
+    _instance = None
+    _plugins: Dict[str, AgentPlugin] = {}
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(PluginRegistry, cls).__new__(cls)
+        return cls._instance
+
+    @property
+    def plugins(self) -> Dict[str, AgentPlugin]:
+        """获取所有已注册的插件"""
+        return self._plugins
+
+    def scan_and_load(self):
+        """
+        扫描插件目录并加载所有实现的 AgentPlugin。
+        """
+        plugin_dir = Path(settings.PLUGIN_DIR)
+        
+        # 确保插件目录存在
+        if not plugin_dir.exists():
+            logger.warning(f"插件目录不存在: {plugin_dir}")
+            return
+
+        logger.info(f"开始扫描插件目录: {plugin_dir}")
+
+        # 遍历插件目录下的所有子文件夹
+        # 假设 app/plugins 是一个包，或者我们在 sys.path 中
+        # 这里我们使用相对于项目根目录的路径导入
+        
+        # 获取基础包名，例如 "app.plugins"
+        base_package = "app.plugins"
+
+        for item in plugin_dir.iterdir():
+            if item.is_dir() and not item.name.startswith("__"):
+                plugin_name = item.name
+                module_name = f"{base_package}.{plugin_name}"
+                
+                try:
+                    # 1. 尝试直接从包导入 (如果在 __init__.py 中导出)
+                    logger.info(f"尝试加载插件包: {module_name}")
+                    module = importlib.import_module(module_name)
+                    self._register_plugins_from_module(module)
+                    
+                    # 2. 尝试从 plugin.py 导入 (约定俗成)
+                    try:
+                        plugin_module_name = f"{module_name}.plugin"
+                        logger.info(f"尝试加载插件模块: {plugin_module_name}")
+                        plugin_module = importlib.import_module(plugin_module_name)
+                        self._register_plugins_from_module(plugin_module)
+                    except ModuleNotFoundError as e:
+                        if e.name == plugin_module_name:
+                            # 只是没有 plugin.py 文件，忽略
+                            pass
+                        else:
+                            # plugin.py 存在但导入依赖失败
+                            logger.error(f"导入插件模块 {plugin_module_name} 失败 (依赖丢失): {e}")
+                    except ImportError as e:
+                        logger.error(f"导入插件模块 {plugin_module_name} 失败: {e}")
+                    
+                except ImportError as e:
+                    logger.error(f"无法导入插件模块 {module_name}: {e}")
+                except Exception as e:
+                    logger.error(f"加载插件 {module_name} 时发生错误: {e}")
+
+    def _register_plugins_from_module(self, module):
+        """
+        从模块中查找并注册 AgentPlugin 的子类。
+        """
+        for name, obj in inspect.getmembers(module):
+            if (inspect.isclass(obj) and 
+                issubclass(obj, AgentPlugin) and 
+                obj is not AgentPlugin):
+                
+                try:
+                    # 实例化插件
+                    plugin_instance = obj()
+                    self.register(plugin_instance)
+                except Exception as e:
+                    logger.error(f"实例化插件类 {name} 失败: {e}")
+
+    def register(self, plugin: AgentPlugin):
+        """
+        注册单个插件实例。
+        """
+        if plugin.name in self._plugins:
+            logger.warning(f"插件 {plugin.name} 已存在，将被覆盖。")
+        
+        self._plugins[plugin.name] = plugin
+        logger.info(f"成功注册插件: {plugin.name} ({plugin.description})")
+
+    def get_plugin(self, name: str) -> AgentPlugin:
+        """根据名称获取插件"""
+        return self._plugins.get(name)
+
+# 创建全局单例实例
+registry = PluginRegistry()

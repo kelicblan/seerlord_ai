@@ -1,0 +1,98 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
+from langserve import add_routes
+# from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+# from psycopg_pool import AsyncConnectionPool
+from langgraph.checkpoint.memory import MemorySaver
+
+from app.core.config import settings
+from app.kernel.registry import registry
+from app.kernel.master_graph import workflow
+# 注意：我们导入 workflow 而不是 master_graph，因为我们需要重新 compile 带有 checkpointer 的 graph
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 1. 启动时扫描插件
+    print("Scanning and loading plugins...")
+    registry.scan_and_load()
+    
+    # 2. 设置数据库连接池和 checkpointer
+    # 为了简化演示并避免本地无 Postgres 环境导致的错误，我们暂时使用 MemorySaver
+    # 如果需要 Postgres，请取消下面的注释并确保 DATABASE_URL 可用
+    
+    """
+    async with AsyncConnectionPool(
+        conninfo=settings.DATABASE_URL,
+        max_size=20,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    ) as pool:
+        checkpointer = AsyncPostgresSaver(pool)
+        
+        # 首次运行时设置表结构
+        await checkpointer.setup()
+        
+        # 3. 编译带 checkpointer 的图
+        # 这会覆盖 app/kernel/master_graph.py 中默认的 compile
+        app.state.graph = workflow.compile(checkpointer=checkpointer)
+        
+        print("Master Graph compiled with Postgres persistence.")
+        
+        yield
+        
+    print("Shutting down...")
+    """
+    print("Plugins loaded. System ready (using MemorySaver).")
+    yield
+
+app = FastAPI(
+    title="SeerLord AI Kernel",
+    version="0.1.0",
+    description="Modular AI Platform with Micro-Kernel Architecture",
+    lifespan=lifespan
+)
+
+# 使用内存检查点 (MemorySaver)
+# 这是一个同步操作，可以直接在这里完成
+checkpointer = MemorySaver()
+
+from typing import Dict, Any
+
+# 编译图
+master_graph_with_persistence = workflow.compile(checkpointer=checkpointer)
+
+def per_req_config_modifier(config: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    """
+    修改每个请求的配置。
+    如果客户端没有提供 thread_id，默认注入 'default_playground_thread'，
+    确保 Playground 可以直接使用且具有（全局共享的）记忆。
+    """
+    config = config.copy()
+    configurable = config.get("configurable", {})
+    if "thread_id" not in configurable:
+        configurable["thread_id"] = "default_playground_thread"
+        config["configurable"] = configurable
+    return config
+
+# 添加路由
+add_routes(
+    app,
+    master_graph_with_persistence,
+    path="/api/v1/agent",
+    playground_type="default",
+    per_req_config_modifier=per_req_config_modifier,
+)
+
+# 修复 Playground 路径问题 (LangServe 前端 Bug 修复)
+@app.post("/api/v1/agent/playground/{path:path}")
+async def proxy_playground_api(path: str, request: Request):
+    """
+    重定向 Playground 发出的错误请求路径。
+    例如: POST /playground/stream_log -> POST /stream_log
+    """
+    target_url = f"/api/v1/agent/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+    return RedirectResponse(url=target_url, status_code=307)
+
+

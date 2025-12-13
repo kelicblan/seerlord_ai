@@ -1,0 +1,163 @@
+from typing import List, Literal
+from uuid import uuid4
+from langgraph.graph import StateGraph, END
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from pydantic import BaseModel, Field
+
+from app.core.config import settings
+from .state import FTAState, FTANode
+from .tools import nodes_to_plantuml
+
+# 定义 LLM 输出结构
+class CauseNode(BaseModel):
+    description: str = Field(description="Description of the cause")
+    type: Literal["intermediate", "basic_event"] = Field(description="Type of the event")
+    gate_logic: Literal["OR", "AND"] = Field(default="OR", description="Logic gate relating these causes to the parent")
+
+class AnalysisResult(BaseModel):
+    causes: List[CauseNode] = Field(description="List of identified causes")
+
+def initialize_analysis(state: FTAState):
+    """
+    初始化分析：从用户输入中提取顶层事件。
+    """
+    # 如果已经有节点，跳过初始化
+    if state.get("tree_nodes"):
+        return {}
+
+    # 简单地将最后一条消息作为顶层事件
+    # 实际应用中应该用 LLM 提取
+    user_input = state["messages"][-1].content
+    
+    root_id = str(uuid4())[:8]
+    root_node = FTANode(
+        id=root_id,
+        label=user_input,
+        type="top_event",
+        parent_id=None
+    )
+    
+    return {
+        "tree_nodes": [root_node],
+        "processing_queue": [root_id],
+        "iteration_count": 0,
+        "completed": False
+    }
+
+def root_cause_analysis(state: FTAState):
+    """
+    递归分析节点
+    """
+    queue = state.get("processing_queue", [])
+    if not queue:
+        return {"completed": True}
+
+    current_id = queue[0]
+    # 获取当前节点信息
+    current_node = next((n for n in state["tree_nodes"] if n.id == current_id), None)
+    
+    if not current_node:
+        # 节点未找到，移除并继续
+        return {"processing_queue": queue[1:]}
+
+    # 如果达到最大迭代次数，停止扩展
+    if state.get("iteration_count", 0) > 5:  # 限制深度/次数防止死循环
+        return {"processing_queue": queue[1:]}
+
+    llm = ChatOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.API_BASE,
+        model=settings.MODEL,
+        temperature=0.7
+    )
+    structured_llm = llm.with_structured_output(AnalysisResult)
+    
+    system_prompt = (
+        f"You are an expert in Fault Tree Analysis (FTA). "
+        f"Analyze the event: '{current_node.label}'. "
+        "Identify the immediate direct causes. "
+        "Classify them as 'intermediate' (needs further analysis) or 'basic_event' (root cause). "
+        "Determine if the relationship is OR or AND."
+    )
+    
+    try:
+        result = structured_llm.invoke([SystemMessage(content=system_prompt)])
+        
+        new_nodes = []
+        new_queue_items = []
+        
+        for cause in result.causes:
+            new_id = str(uuid4())[:8]
+            node = FTANode(
+                id=new_id,
+                label=cause.description,
+                type=cause.type,
+                parent_id=current_id,
+                gate=cause.gate_logic
+            )
+            new_nodes.append(node)
+            
+            if cause.type == "intermediate":
+                new_queue_items.append(new_id)
+        
+        # 更新状态：移除当前处理的 ID，添加新的 ID 到队尾
+        return {
+            "tree_nodes": new_nodes, # LangGraph add_messages 行为不同，这里是 list，会覆盖吗？
+            # 注意：StateGraph 默认是覆盖 reducer，除非定义了 custom reducer。
+            # 这里我们需要手动合并 list，或者在 State 定义里使用 reducer。
+            # 为了简单，我们假设 State 定义里 tree_nodes 是 overwrite，所以我们需要读取旧的 + 新的。
+            # 但是 LangGraph 的 update 机制通常是 merge dict keys。
+            # 对于 list 字段，如果没定义 reducer，通常是 overwrite。
+            # 让我检查一下 FTAState 定义。
+            # FTAState 是 TypedDict。
+            # 我们需要返回新的完整 list 或者修改 State 定义。
+            # 为了安全起见，我们读取旧的并在 return 时返回完整列表。
+            # 但在 Tool 里不能直接读 "state['tree_nodes']" 之外的东西。
+            # 实际上 state 传进来就是完整的。
+            "tree_nodes": state["tree_nodes"] + new_nodes,
+            "processing_queue": queue[1:] + new_queue_items,
+            "iteration_count": state.get("iteration_count", 0) + 1
+        }
+        
+    except Exception as e:
+        print(f"FTA Analysis error: {e}")
+        return {"processing_queue": queue[1:]} # 出错跳过
+
+def finalize_result(state: FTAState):
+    """
+    生成最终报告
+    """
+    uml = nodes_to_plantuml(state["tree_nodes"])
+    return {
+        "messages": [HumanMessage(content=f"FTA Analysis Complete.\n\nPlantUML:\n```plantuml\n{uml}\n```")]
+    }
+
+def should_continue(state: FTAState):
+    if state.get("processing_queue") and state.get("iteration_count", 0) <= 5:
+        return "continue"
+    return "end"
+
+# 构建图
+workflow = StateGraph(FTAState)
+
+workflow.add_node("initialize", initialize_analysis)
+workflow.add_node("analyze", root_cause_analysis)
+workflow.add_node("finalize", finalize_result)
+
+workflow.set_entry_point("initialize")
+
+workflow.add_edge("initialize", "analyze")
+
+workflow.add_conditional_edges(
+    "analyze",
+    should_continue,
+    {
+        "continue": "analyze",
+        "end": "finalize"
+    }
+)
+
+workflow.add_edge("finalize", END)
+
+fta_graph = workflow.compile()

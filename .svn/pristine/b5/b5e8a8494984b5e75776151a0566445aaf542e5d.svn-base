@@ -1,0 +1,135 @@
+# SeerLord AI 架构指南 (SeerLord AI Architecture Guide)
+
+本文档详细介绍了 SeerLord AI 的架构设计、文件结构以及开发指南，帮助你快速理解并扩展项目。
+
+## 1. 核心架构设计 (Architecture Design)
+
+本项目采用 **"微内核 + 插件" (Micro-Kernel + Plugin)** 架构，旨在实现高度的模块化和可扩展性。
+
+### 核心概念
+
+*   **Micro-Kernel (微内核)**:
+    *   位于 `app/kernel/`。
+    *   **职责**: 仅负责通用基础设施，包括 路由分发 (Router)、状态管理 (State Management)、插件加载 (Plugin Loading) 和 持久化 (Persistence)。
+    *   **原则**: 内核中 **绝不** 包含具体的业务逻辑（如“教程生成”或“故障分析”）。
+
+*   **Plugins (插件)**:
+    *   位于 `app/plugins/`。
+    *   **职责**: 封装具体的业务能力。每个插件都是一个独立的 Agent，拥有自己的 Graph（流程图）、State（状态）和 Tools（工具）。
+    *   **动态加载**: 系统启动时，内核会自动扫描 `plugins` 目录，发现并注册所有遵循 `AgentPlugin` 接口的插件。
+
+*   **Orchestration (编排)**:
+    *   使用 **LangGraph** 构建基于状态图 (StateGraph) 的工作流。
+    *   **Master Graph**: 主图，包含一个 Router 节点。它接收用户输入，分析意图，然后将控制权“路由”到特定的 Plugin 子图。
+
+### 数据流向
+
+1.  **用户请求** -> **FastAPI/LangServe** (API 层)
+2.  **Master Graph** (Router Node) -> 分析意图
+3.  **路由决策** -> 激活特定 **Plugin Graph** (如 `tutorial_agent` 或 `fta_analyst`)
+4.  **Plugin 执行** -> 生成结果 -> 返回 Master Graph
+5.  **响应** -> 返回给用户
+
+---
+
+## 2. 文件结构与功能 (File Structure & Functions)
+
+```text
+seerlord_ai/
+├── app/
+│   ├── core/
+│   │   └── config.py          # [配置] 管理环境变量 (API Key, DB URL, Model配置)
+│   ├── kernel/                # [微内核] 核心基础设施
+│   │   ├── interface.py       # [接口] 定义 AgentPlugin 抽象基类，所有插件必须实现此接口
+│   │   ├── registry.py        # [注册表] 单例模式，负责扫描 plugins 目录并加载插件
+│   │   ├── master_graph.py    # [主图] 定义主路由逻辑，动态挂载所有已加载的插件子图
+│   │   └── persistence.py     # [持久化] 数据库连接和 Checkpointer 设置 (Postgres/Memory)
+│   ├── plugins/               # [插件库] 业务逻辑存放处
+│   │   ├── tutorial_generator/# [插件A] 教程生成器
+│   │   │   ├── schema.py      #    - 定义输出的数据结构 (Pydantic)
+│   │   │   ├── graph.py       #    - 定义该插件的 LangGraph 流程 (Nodes & Edges)
+│   │   │   └── plugin.py      #    - 实现 AgentPlugin 接口，暴露插件信息
+│   │   └── fta_agent/         # [插件B] 故障树分析 (FTA)
+│   │       ├── state.py       #    - 定义 FTA 特有的状态结构
+│   │       ├── tools.py       #    - 辅助工具 (如 PlantUML 转换)
+│   │       ├── graph.py       #    - 递归分析的逻辑流程
+│   │       └── plugin.py      #    - 插件入口
+│   └── main.py                # [入口] FastAPI 应用，配置 Lifespan (启动/关闭逻辑) 和 API 路由
+├── scripts/
+│   └── test_flow.py           # [测试] 集成测试脚本，验证路由逻辑
+├── pyproject.toml             # [依赖] 项目依赖管理 (Poetry)
+└── .env                       # [环境] 环境变量配置文件
+```
+
+---
+
+## 3. 开发指南 (Developer Guide)
+
+### 场景 A: 我要增加一个新的 Agent (例如："翻译助手")
+
+只需在 `app/plugins/` 下创建一个新文件夹，无需修改内核代码。
+
+**步骤：**
+
+1.  **创建目录**: `app/plugins/translator/`
+2.  **定义逻辑 (`graph.py`)**:
+    *   定义 `TranslatorState`。
+    *   编写节点函数 (Node Functions)，调用 LLM 进行翻译。
+    *   构建并编译 `StateGraph`。
+3.  **实现接口 (`plugin.py`)**:
+    *   继承 `AgentPlugin`。
+    *   定义 `name` (如 "translator_agent") 和 `description` (Router 会根据这个描述来决定何时调用它)。
+    *   在 `get_graph()` 中返回第 2 步编译好的图。
+4.  **重启服务**: 内核会自动发现并加载它！
+
+### 场景 B: 我要修改现有的 Agent
+
+*   直接修改对应插件目录下的 `graph.py` 或 `prompt`。
+*   每个插件是隔离的，修改 `tutorial_generator` 不会影响 `fta_agent`。
+
+### 场景 C: 事件监控咋搞？ (How to do Event Monitoring?)
+
+"事件监控"通常包含两层含义，SeerLord 都可以支持：
+
+**1. 业务层监控 (Business Event Monitoring):**
+*   **目标**: 监控外部系统（如服务器日志、IoT 设备），发现异常自动触发分析。
+*   **实现**:
+    *   创建一个新的插件 `app/plugins/monitor_agent/`。
+    *   **被动模式**: 该 Agent 提供一个 Tool，让外部系统通过 API 调用它。
+    *   **主动模式**: 在 `main.py` 的 `lifespan` 中启动一个后台任务 (Background Task)，定期轮询外部 API，发现异常时，通过 `master_graph.invoke()` 主动触发 `fta_analyst` 进行根因分析。
+
+**2. 系统层监控 (System Observability):**
+*   **目标**: 监控 Agent 自身的运行状态、Token 消耗、延迟等。
+*   **实现**:
+    *   **LangSmith**: LangGraph 原生支持。只需在 `.env` 配置 `LANGCHAIN_TRACING_V2=true` 和 API Key，即可在网页端看到完整的调用链路追踪。
+    *   **日志**: 在 `app/core/config.py` 中配置 `logging`，将关键步骤写入文件或 ELK 堆栈。
+
+### 场景 D: 前端界面咋搞？ (Frontend Integration)
+
+SeerLord 后端通过 **LangServe** 暴露了标准的 REST API。
+
+*   **API 地址**: `http://localhost:8000/api/v1/agent`
+*   **API 文档**: `http://localhost:8000/docs`
+
+**你可以选择以下任一方式开发前端：**
+
+1.  **Streamlit (推荐用于快速原型)**:
+    *   使用 Python 编写。
+    *   利用 `langserve` 的 `RemoteRunnable` 客户端连接后端。
+    *   代码量极少，适合演示。
+
+2.  **Modern Web App (React / Vue / Next.js)**:
+    *   使用 `LangChain.js` 库连接后端。
+    *   支持流式输出 (Streaming)，获得类似 ChatGPT 的打字机效果。
+
+3.  **现有系统集成**:
+    *   任何支持 HTTP 请求的系统都可以调用 `/invoke` 或 `/stream` 接口。
+
+---
+
+## 4. 快速启动 (Quick Start)
+
+1.  **配置环境**: 复制 `.env.example` 为 `.env` 并填入配置。
+2.  **安装依赖**: `poetry install`
+3.  **运行服务**: `poetry run uvicorn app.main:app --reload`
+4.  **测试**: 打开 `http://localhost:8000/api/v1/agent/playground` 进行对话。

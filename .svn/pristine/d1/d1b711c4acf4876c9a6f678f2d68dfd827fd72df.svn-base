@@ -1,0 +1,76 @@
+from typing import Annotated, List, Dict, Optional
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
+from langchain_openai import ChatOpenAI
+from app.core.config import settings
+from .schema import TutorialSchema
+
+# 定义局部状态
+class TutorialState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    tutorial_result: Optional[TutorialSchema]
+
+def analyze_intent(state: TutorialState):
+    """
+    分析用户意图节点。
+    目前这个节点主要充当透传和简单的上下文准备，
+    在更复杂的场景中，可以用于提取关键参数（主题、难度等）。
+    """
+    # 可以在这里做一些预处理，例如总结用户需求
+    # 暂时直接透传，因为 generate_outline 会处理主要逻辑
+    return {"messages": [SystemMessage(content="Analyzing user request for tutorial generation...")]}
+
+def generate_outline(state: TutorialState):
+    """
+    生成教程大纲节点。
+    使用结构化输出生成 TutorialSchema。
+    """
+    llm = ChatOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.API_BASE,
+        model=settings.MODEL,
+        temperature=0.7
+    )
+    structured_llm = llm.with_structured_output(TutorialSchema)
+    
+    system_prompt = (
+        "You are an expert curriculum designer. "
+        "Create a structured tutorial outline based on the user's request. "
+        "Ensure the difficulty level matches the user's expertise if specified."
+    )
+    
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    
+    try:
+        # 调用 LLM 生成结构化数据
+        tutorial = structured_llm.invoke(messages)
+        
+        # 将结果转换为可读文本回复给用户（可选，取决于是否需要让用户在对话中看到 JSON）
+        # 这里我们将结果存储在 state 中，同时也生成一个文本消息回复
+        
+        response_text = f"Generated Tutorial: {tutorial.title} ({tutorial.difficulty})\n"
+        for i, mod in enumerate(tutorial.modules, 1):
+            response_text += f"\nModule {i}: {mod.name}\n"
+            for topic in mod.topics:
+                response_text += f"  - {topic}\n"
+        
+        return {
+            "tutorial_result": tutorial,
+            "messages": [HumanMessage(content=response_text, name="tutorial_agent")]
+        }
+    except Exception as e:
+        return {"messages": [HumanMessage(content=f"Error generating tutorial: {str(e)}")]}
+
+# 构建子图
+workflow = StateGraph(TutorialState)
+
+workflow.add_node("analyze_intent", analyze_intent)
+workflow.add_node("generate_outline", generate_outline)
+
+workflow.set_entry_point("analyze_intent")
+workflow.add_edge("analyze_intent", "generate_outline")
+workflow.add_edge("generate_outline", END)
+
+tutorial_graph = workflow.compile()

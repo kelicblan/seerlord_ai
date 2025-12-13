@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "news_service": {
+      "command": "python",
+      "args": ["mcp_services/news/server.py"]
+    },
+    "bingcn": {
+      "command": "npx",
+      "args": ["-y", "bing-cn-mcp"]
+    }
+  }
+}

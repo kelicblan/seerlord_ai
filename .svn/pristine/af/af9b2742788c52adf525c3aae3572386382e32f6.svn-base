@@ -1,0 +1,41 @@
+import sys
+import os
+from langchain_core.messages import HumanMessage
+
+# 添加项目根目录到 sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from app.kernel.master_graph import master_graph
+
+def run_test(input_text: str, expected_plugin: str):
+    print(f"\n--- Testing Input: '{input_text}' ---")
+    
+    # 构建初始状态
+    initial_state = {
+        "messages": [HumanMessage(content=input_text)],
+        "target_plugin": "" # 初始为空
+    }
+    
+    try:
+        # 调用 master_graph
+        # 使用 invoke 同步调用
+        result = master_graph.invoke(initial_state)
+        
+        # 检查路由结果
+        actual_plugin = result.get("target_plugin")
+        print(f"Router Selected: {actual_plugin}")
+        
+        if actual_plugin == expected_plugin:
+            print(f"✅ PASS: Correctly routed to {expected_plugin}")
+        else:
+            print(f"❌ FAIL: Expected {expected_plugin}, got {actual_plugin}")
+            
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+
+if __name__ == "__main__":
+    # Test Case 1: Tutorial
+    run_test("I want to learn Python", "tutorial_agent")
+    
+    # Test Case 2: FTA
+    run_test("Analyze this engine fire", "fta_analyst")

@@ -1,0 +1,162 @@
+------------------------------------------
+PHASE 1: KERNEL & INFRASTRUCTURE
+------------------------------------------
+Project Skeleton Create the following folder structure: app/ kernel/ # Core infrastructure (Router, Registry, Persistence) plugins/ # Business logic (Initially empty) core/ # Config, Database setup api/ # FastAPI routes tests/
+
+Initialize pyproject.toml (using poetry) with dependencies:
+
+langgraph
+
+langchain-openai
+
+fastapi
+
+uvicorn
+
+pydantic-settings
+
+asyncpg
+
+psycopg2-binary
+
+langserve
+
+Create app/core/config.py using pydantic-settings to load environment variables:
+
+OPENAI_API_KEY
+
+DATABASE_URL
+
+PLUGIN_DIR (default: "app/plugins")
+
+Plugin Interface & Registry Implement the dynamic plugin system in app/kernel/:
+
+interface.py: Define an abstract base class AgentPlugin.
+
+Property name (str): Unique ID.
+
+Property description (str): Used by the Router to understand the tool.
+
+Method get_graph(): Returns a compiled LangGraph CompiledGraph.
+
+registry.py: Create a singleton PluginRegistry.
+
+Method scan_and_load(): Iterate through subfolders in app/plugins/.
+
+Use importlib to dynamically import the module.
+
+Register any class implementing AgentPlugin.
+
+Store plugins in a dict _plugins.
+
+Master Router Graph Create the main orchestrator in app/kernel/master_graph.py:
+
+Define MasterState(TypedDict):
+
+messages: Annotated[list, add_messages]
+
+target_plugin: str (The name of the chosen plugin)
+
+Create a router_node:
+
+Retrieve all plugin descriptions from PluginRegistry.
+
+Construct a system prompt: "You are a router. Available tools: {plugins}. Select the best tool for the user's request."
+
+Return the selected plugin name.
+
+Build the StateGraph:
+
+Start -> Router Node.
+
+(We will add the conditional edges to actual plugins in Phase 3).
+
+------------------------------------------
+PHASE 2: BUSINESS PLUGINS
+------------------------------------------
+Plugin A - Tutorial Generator Create app/plugins/tutorial_generator/:
+
+schema.py: Define TutorialSchema using Pydantic (title, modules, difficulty).
+
+graph.py:
+
+Define local TutorialState.
+
+Create nodes: analyze_intent -> generate_outline.
+
+Use strict structured output to match TutorialSchema.
+
+Return the compiled subgraph.
+
+plugin.py: Implement AgentPlugin.
+
+name: "tutorial_agent"
+
+description: "Generates structured learning plans and tutorials."
+
+get_graph(): Returns the graph from step 2.
+
+Plugin B - FTA (Accident Analysis) Create app/plugins/fta_agent/:
+
+state.py: Define FTAState for recursive tree building.
+
+graph.py:
+
+Node root_cause_analysis: Recursively ask LLM for causes of an event.
+
+Logic: Loop until basic causes are found.
+
+tools.py: Helper to convert the tree state to PlantUML syntax string.
+
+plugin.py: Implement AgentPlugin.
+
+name: "fta_analyst"
+
+description: "Analyzes accidents using Fault Tree Analysis (FTA)."
+
+------------------------------------------
+PHASE 3: INTEGRATION & WIRING
+------------------------------------------
+Dynamic Subgraph Mounting Update app/kernel/master_graph.py:
+
+In the graph construction logic, iterate through PluginRegistry.get_all().
+
+For each plugin, add its graph as a node: workflow.add_node(plugin.name, plugin.get_graph()).
+
+Create a Conditional Edge from Router:
+
+If router output matches a plugin name, go to that node.
+
+Else, go to END.
+
+------------------------------------------
+PHASE 4: PRODUCTION FEATURES
+------------------------------------------
+Persistence In app/kernel/persistence.py:
+
+Set up AsyncPostgresSaver from langgraph.checkpoint.postgres.
+
+Configure connection using DATABASE_URL.
+
+API Exposure In app/main.py:
+
+Initialize FastAPI.
+
+On startup, run PluginRegistry.scan_and_load().
+
+Use add_routes (LangServe) to expose the Master Graph at /api/v1/agent.
+
+Ensure thread_id is accepted for state continuity.
+
+------------------------------------------
+PHASE 5: VERIFICATION
+------------------------------------------
+Integration Test Create scripts/test_flow.py:
+
+Mock the user input: "I want to learn Python".
+
+Assert the Router selects "tutorial_agent".
+
+Mock the input: "Analyze this engine fire".
+
+Assert the Router selects "fta_analyst".

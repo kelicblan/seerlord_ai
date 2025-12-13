@@ -1,0 +1,205 @@
+from typing import Annotated, List, Dict, Any
+from typing_extensions import TypedDict, NotRequired
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
+from pydantic import BaseModel, Field
+
+from app.kernel.registry import registry
+from app.core.config import settings
+from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage, convert_to_messages
+from langchain_core.messages import ToolMessage
+import traceback
+
+# 定义 MasterState
+class MasterState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    target_plugin: NotRequired[str]
+
+# 定义路由输出结构
+class RouterOutput(BaseModel):
+    plugin_name: str = Field(description="The name of the plugin to route the request to.")
+
+def router_node(state: MasterState) -> Dict[str, Any]:
+    """
+    路由节点：分析用户意图并选择最合适的插件。
+    """
+    # 1. 确保消息格式正确
+    # LangServe 有时可能传递 dict 列表，这里强制转换一次以防万一
+    # 同时过滤掉可能导致报错的奇怪对象
+    incoming_messages = state["messages"]
+    sanitized_messages = []
+    for msg in incoming_messages:
+        if isinstance(msg, dict):
+            # 尝试手动转换 dict 为 Message 对象
+            msg_type = msg.get("type")
+            content = msg.get("content", "")
+            if msg_type == "human":
+                sanitized_messages.append(HumanMessage(content=content))
+            elif msg_type == "ai":
+                sanitized_messages.append(AIMessage(content=content))
+            elif msg_type == "system":
+                sanitized_messages.append(SystemMessage(content=content))
+            elif msg_type == "tool":
+                # 对于 tool message，我们需要 tool_call_id
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                sanitized_messages.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+            else:
+                # 默认当作 HumanMessage 处理，避免丢消息
+                sanitized_messages.append(HumanMessage(content=str(content)))
+        elif isinstance(msg, BaseMessage):
+            sanitized_messages.append(msg)
+        else:
+            # 其他未知类型，强制转字符串
+            sanitized_messages.append(HumanMessage(content=str(msg)))
+
+    # 获取所有可用插件的描述
+    plugins = registry.plugins
+    
+    if not plugins:
+        return {
+            "target_plugin": "no_plugin_available",
+            "messages": [AIMessage(content="系统警告：当前没有加载任何插件，无法处理您的请求。")]
+        }
+
+    plugin_descriptions = "\n".join([f"- {p.name}: {p.description}" for p in plugins.values()])
+    
+    system_prompt = (
+        f"You are a router. Available tools:\n{plugin_descriptions}\n"
+        "Select the best tool for the user's request. "
+        "If no tool matches, return 'default'."
+    )
+    
+    # 使用支持结构化输出的 LLM
+    llm = ChatOpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.API_BASE,
+        model=settings.MODEL,
+        temperature=0
+    )
+    structured_llm = llm.with_structured_output(RouterOutput)
+    
+    # 构造最终消息列表
+    # LangChain ChatModel 不支持 system message 在中间，必须在最前面
+    # 如果 sanitized_messages 中包含 system message，可能会导致错误
+    # 这里我们只保留非 SystemMessage 的部分作为 user history
+    user_history = [m for m in sanitized_messages if not isinstance(m, SystemMessage)]
+    
+    messages = [SystemMessage(content=system_prompt)] + user_history
+    
+    target = "error"
+    error_message = None
+
+    try:
+        result = structured_llm.invoke(messages)
+        target = result.plugin_name
+    except Exception as e:
+        # 记录详细错误堆栈
+        error_msg = f"Router LLM error: {e}"
+        print(error_msg)
+        traceback.print_exc()
+        
+        # 尝试降级策略：普通文本对话
+        try:
+            print("Attempting fallback to plain text LLM...")
+            fallback_prompt = (
+                f"{system_prompt}\n"
+                "IMPORTANT: Reply ONLY with the name of the tool (e.g., 'tutorial_agent'). "
+                "Do not add any other text."
+            )
+            fallback_messages = [SystemMessage(content=fallback_prompt)] + sanitized_messages
+            fallback_response = llm.invoke(fallback_messages)
+            content = fallback_response.content.strip().lower()
+            
+            # 简单验证
+            if content in plugins:
+                target = content
+                print(f"Fallback successful: routed to {target}")
+            else:
+                print(f"Fallback failed: '{content}' is not a valid plugin.")
+                target = "error"
+                error_message = f"路由失败，且降级重试无效。LLM 返回: {content}"
+                
+        except Exception as fallback_e:
+            print(f"Fallback LLM error: {fallback_e}")
+            target = "error"
+            error_message = f"系统错误：路由服务完全不可用 ({fallback_e})" # 修正：显示 fallback 的错误
+
+    # 如果发生错误，返回错误提示给用户
+    if target == "error":
+        msg_content = error_message or "抱歉，我无法理解您的意图，或者路由服务出现故障。"
+        return {
+            "target_plugin": "error",
+            "messages": [AIMessage(content=msg_content)]
+        }
+
+    return {"target_plugin": target}
+
+# 构建 StateGraph
+workflow = StateGraph(MasterState)
+
+# 1. 首先加载所有插件
+registry.scan_and_load()
+
+workflow.add_node("router", router_node)
+workflow.set_entry_point("router")
+
+# 2. 动态挂载插件子图
+# 将每个插件的 CompiledGraph 作为一个节点添加到主图中
+# 节点名称直接使用插件名称 (plugin.name)
+available_plugins = []
+for name, plugin in registry.plugins.items():
+    print(f"Mounting plugin: {name}")
+    workflow.add_node(name, plugin.get_graph())
+    available_plugins.append(name)
+    # 插件执行完后，通常结束或回到路由？
+    # 根据 "Micro-Kernel" 模式，通常是一次请求对应一次插件执行，然后结束。
+    workflow.add_edge(name, END)
+
+# 3. 定义路由逻辑
+def route_to_plugin(state: MasterState):
+    """
+    条件边函数：根据 router_node 的输出决定去哪个节点。
+    """
+    target = state.get("target_plugin")
+    
+    # 检查目标插件是否存在于已注册的插件列表中
+    if target in available_plugins:
+        return target
+    
+    # 如果没找到匹配的插件，或者 router 返回 default/error，则结束
+    return END
+
+# 4. 添加条件边
+# 从 router 节点出发，根据 route_to_plugin 的返回值进行跳转
+# path_map 显式列出可能的跳转目标，虽然 LangGraph 支持动态，但列出更清晰
+path_map = {name: name for name in available_plugins}
+path_map[END] = END
+# 注意：如果 router 返回的值不在 path_map 的 key 中，LangGraph 可能会报错，
+# 所以 route_to_plugin 必须确保返回 path_map 中的 key。
+
+workflow.add_conditional_edges(
+    "router",
+    route_to_plugin,
+    path_map
+)
+
+from langgraph.checkpoint.memory import MemorySaver
+
+# 编译 Graph
+# 注意：在生产环境中，checkpointer 通常在 app 启动时注入，
+# 这里为了方便开发和测试，我们使用 MemorySaver 作为默认值，
+# 或者保留为空，由调用者（如 LangServe）传入 checkpointer。
+# 如果直接在这里 compile(checkpointer=...)，那么就固定了。
+# 更好的做法是暴露 workflow 对象，或者提供一个 factory function。
+
+# 这里我们先不绑定 checkpointer，由 LangServe 层处理，
+# 或者在 main.py 中重新 compile。
+# 但为了保持一致性，我们在这里不做 checkpointer 的绑定，
+# 除非我们想在这里引入 persistence 模块。
+
+# 修改：为了让 LangServe 使用 checkpointer，我们通常传递 compiled graph。
+# 如果需要持久化，必须在 compile 时传入。
+# 我们将在 main.py 中处理 checkpointer 的注入。
+master_graph = workflow.compile()
