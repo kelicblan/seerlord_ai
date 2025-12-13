@@ -1,78 +1,91 @@
 # SeerLord AI
 
-> **SeerLord AI**：基于微内核架构与 LangGraph 的下一代模块化 AI 智能体编排平台，原生支持 MCP 协议与人机协同（Human-in-the-loop），让复杂 Agent 开发更稳定、更灵活。
+[中文文档](README_zh.md) | **English**
 
-SeerLord AI 是一个基于**微内核 + 插件化架构**构建的模块化 AI 平台。它利用 LangGraph 进行强大的智能体（Agent）编排，支持灵活的插件扩展，旨在为开发者提供一个高效、可扩展的 AI 应用开发框架。
+> **SeerLord AI**: The next-generation modular AI agent orchestration platform based on micro-kernel architecture and LangGraph. It natively supports the MCP protocol and Human-in-the-loop collaboration, making complex agent development more stable and flexible.
 
-## 🌟 项目亮点
+## SeerLord AI: Redefining AI Agent Development Architecture
 
-- **微内核架构 (Micro-Kernel)**: 核心系统轻量稳定，负责生命周期管理、上下文共享和资源调度。
-- **插件化系统 (Plugin System)**: 所有的业务能力（如新闻播报、教程生成、金融分析等）均通过插件实现，即插即用。
-- **智能体编排 (LangGraph)**: 利用 LangGraph 构建复杂的有状态多智能体工作流。
-- **MCP 支持**: 集成 Model Context Protocol (MCP)，实现标准化的上下文和工具交互。
-- **高性能后端**: 基于 FastAPI 构建的异步后端，支持 SSE 流式响应。
+When building complex AI applications, we often face pain points such as severe code coupling, difficulty in extension, and chaotic state management. SeerLord AI was born to solve these problems.
 
-## 🛠️ 技术栈
+As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts an advanced **"Micro-Kernel + Plugin"** architecture design. This means its core (Kernel) is only responsible for the most basic routing, memory management, and protocol adaptation, while all business capabilities (such as tutorial generation, real-time news, data analysis) are implemented through independent plugins. This design achieves true business isolation and plug-and-play capability.
 
-- **语言**: Python 3.11+
-- **框架**: FastAPI, LangChain, LangGraph
-- **数据库**: PostgreSQL (AsyncPG)
-- **工具库**: Pydantic, Loguru, SSE-Starlette
+## Why Choose SeerLord AI?
 
-## 📂 目录结构
+1. **Powerful Orchestration Capabilities**: Built on **LangGraph**, it natively supports complex graph-structured workflows (Graph Workflow), easily implementing advanced logic such as loops, branches, and fallbacks, rather than simple linear chains.
+2. **Production-Grade Stability**: Fully asynchronous (Asyncio) backend design, with built-in database connection pool management and global exception circuit breaking mechanisms, ensuring robust operation in high-concurrency scenarios.
+3. **Standardized Tool Ecosystem**: Fully integrates the **Model Context Protocol (MCP)**, making the connection between Agents and the external world (file systems, GitHub, databases) standardized and universal.
+4. **Controllable Design**: Deeply integrates **Human-in-the-loop** mode. Agents can automatically pause during critical planning execution, waiting for human approval or correction, making every step of AI safe and controllable.
+
+## 🌟 Key Features
+
+- **Micro-Kernel Architecture**: A lightweight and stable core system responsible for lifecycle management, context sharing, and resource scheduling.
+- **Plugin System**: All business capabilities (such as news reporting, tutorial generation, financial analysis, etc.) are implemented via plugins, enabling plug-and-play functionality.
+- **Agent Orchestration (LangGraph)**: Utilizes LangGraph to build complex stateful multi-agent workflows.
+- **MCP Support**: Integrates the Model Context Protocol (MCP) for standardized context and tool interactions.
+- **High-Performance Backend**: An asynchronous backend built with FastAPI, supporting SSE streaming responses.
+
+## 🛠️ Tech Stack
+
+- **Language**: Python 3.11+
+- **Frameworks**: FastAPI, LangChain, LangGraph
+- **Database**: PostgreSQL (AsyncPG)
+- **Utilities**: Pydantic, Loguru, SSE-Starlette
+
+## 📂 Directory Structure
 
 ```
 seerlord_ai/
 ├── server/
-│   ├── core/           # 核心配置与 LLM 封装
-│   ├── kernel/         # 微内核实现 (注册表, MCP 管理, 记忆管理)
-│   ├── plugins/        # 插件目录 (包含各类 Agent 实现)
-│   └── main.py         # 应用入口
-├── mcp_services/       # MCP 服务实现
-├── scripts/            # 实用脚本
-└── pyproject.toml      # 项目依赖配置
+│   ├── core/           # Core configuration & LLM wrappers
+│   ├── kernel/         # Micro-kernel implementation (Registry, MCP Manager, Memory Manager)
+│   ├── plugins/        # Plugins directory (contains various Agent implementations)
+│   └── main.py         # Application entry point
+├── mcp_services/       # MCP service implementations
+├── scripts/            # Utility scripts
+└── pyproject.toml      # Project dependencies configuration
 ```
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 前置要求
+### Prerequisites
 
-- Python 3.11 或更高版本
-- PostgreSQL 数据库
+- Python 3.11 or higher
+- PostgreSQL Database
 
-### 安装依赖
+### Installation
 
-建议使用 Poetry 或 pip 进行安装。
+It is recommended to use Poetry or pip for installation.
 
 ```bash
-# 使用 pip 安装依赖
+# Install dependencies using pip
 pip install -r requirements.txt
 ```
 
-### 配置环境
+### Configuration
 
-复制环境变量示例文件并修改配置：
+Copy the example environment variable file and modify the configuration:
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，配置 OpenAI API Key 和数据库连接信息
+# Edit the .env file to configure your OpenAI API Key and database connection details
 ```
 
-### 启动服务
+### Start the Service
 
 ```bash
-# 启动后端服务
+# Start the backend service
 python server/main.py
 ```
 
-## 📄 开源协议
+## 📄 License
 
-本项目采用 [MIT 许可证](LICENSE) 开源。
+This project is open-sourced under the [MIT License](LICENSE).
 
-这意味着您可以自由地：
-- ✅ 商业使用
-- ✅ 修改代码
-- ✅ 分发副本
-- ✅ 私有使用
+You are free to:
+- ✅ Use it commercially
+- ✅ Modify the code
+- ✅ Distribute copies
+- ✅ Use it privately
 
-只需在副本中包含原始许可证和版权声明即可。
+Just include the original license and copyright notice in any copy of the software/source.
