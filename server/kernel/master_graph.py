@@ -10,12 +10,18 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from server.kernel.registry import registry
+from server.kernel.skill_registry import skill_registry
 from server.core.config import settings
 from server.core.llm import get_llm
 
 # =============================================================================
 # Schema Definitions
 # =============================================================================
+
+class SkillRouterResult(BaseModel):
+    """Result of the skill routing decision."""
+    skill_name: Optional[str] = Field(description="The name of the skill to execute, or None if no skill matches.")
+    arguments: Dict[str, Any] = Field(description="The arguments to pass to the skill.", default_factory=dict)
 
 class Task(BaseModel):
     """A single step in the execution plan."""
@@ -52,6 +58,9 @@ class MasterState(TypedDict, total=False):
     retry_count: int            # Number of retries for current task
     # Human Interaction
     user_approval_status: str   # 'pending', 'approved', 'rejected'
+    # Skill State
+    active_skill: str           # Name of the currently active skill
+    skill_args: Dict[str, Any]  # Arguments for the skill
 
 # =============================================================================
 # Helper Functions
@@ -110,6 +119,84 @@ def sanitize_messages(incoming_messages: List[Any]) -> List[BaseMessage]:
 # =============================================================================
 # Nodes
 # =============================================================================
+
+async def skill_router_node(state: MasterState) -> Dict[str, Any]:
+    """
+    Analyzes user input to see if it matches a specific skill.
+    """
+    messages = sanitize_messages(state.get("messages", []))
+    last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+    if not last_user_msg:
+        return {"active_skill": None}
+    
+    user_input = last_user_msg.content
+    
+    # Check registry
+    if not skill_registry.skills:
+        skill_registry.scan_and_load()
+        
+    skills = skill_registry.skills
+    if not skills:
+        return {"active_skill": None}
+        
+    import json
+    skill_desc_list = []
+    for name, s in skills.items():
+        # Get schema properties to help LLM understand expected arguments
+        schema_props = {}
+        if s.args_schema:
+            try:
+                schema_props = s.args_schema.model_json_schema().get("properties", {})
+            except:
+                pass
+        
+        skill_desc_list.append(f"- {name}: {s.description}\n  Expected Arguments: {json.dumps(schema_props)}")
+        
+    skill_desc = "\n".join(skill_desc_list)
+    
+    llm = get_router_llm()
+    structured_llm = llm.with_structured_output(SkillRouterResult)
+    
+    system_prompt = (
+        "You are an Intent Classifier.\n"
+        "Your job is to determine if the user's request matches one of the available skills EXACTLY.\n"
+        f"Available Skills:\n{skill_desc}\n"
+        "Rules:\n"
+        "1. If the request is a direct command for a skill (e.g., 'Calculate 2+2'), return the skill name and arguments.\n"
+        "2. ENSURE arguments match the 'Expected Arguments' schema.\n"
+        "3. If the request is complex, ambiguous, or requires multi-step reasoning, return None (skill_name=None).\n"
+        "4. Only return a skill if you are confident."
+    )
+    
+    try:
+        # Use only the last message for routing to keep it focused on immediate intent
+        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
+        if result.skill_name and result.skill_name in skills:
+             logger.info(f"Skill Matched: {result.skill_name}")
+             return {"active_skill": result.skill_name, "skill_args": result.arguments}
+    except Exception as e:
+        logger.error(f"Skill routing failed: {e}")
+        
+    return {"active_skill": None}
+
+async def skill_executor_node(state: MasterState) -> Dict[str, Any]:
+    """
+    Executes the selected skill.
+    """
+    skill_name = state.get("active_skill")
+    args = state.get("skill_args", {})
+    
+    if not skill_name or skill_name not in skill_registry.skills:
+        return {"messages": [AIMessage(content="Error: Skill not found.")]}
+        
+    skill = skill_registry.skills[skill_name]
+    try:
+        logger.info(f"Executing skill {skill_name} with args: {args}")
+        output = await skill.ainvoke(args)
+        return {"messages": [AIMessage(content=f"Skill Result: {output}")]}
+    except Exception as e:
+        logger.error(f"Skill execution failed: {e}")
+        return {"messages": [AIMessage(content=f"Error executing skill: {e}")]}
 
 class ReflectionResult(BaseModel):
     is_satisfactory: bool = Field(description="Whether the result satisfies the user's request.")
@@ -436,6 +523,14 @@ def route_approval(state: MasterState):
     # Otherwise, go to approval node (which will interrupt)
     return "human_approval"
 
+def route_skill(state: MasterState):
+    """
+    Routes based on skill router result.
+    """
+    if state.get("active_skill"):
+        return "skill_executor"
+    return "planner"
+
 # =============================================================================
 # Graph Builder
 # =============================================================================
@@ -447,10 +542,17 @@ def build_master_graph(checkpointer=None):
     # 确保插件已加载
     if not registry.plugins:
         registry.scan_and_load()
+        
+    # 确保技能已加载
+    if not skill_registry.skills:
+        skill_registry.scan_and_load()
 
     workflow = StateGraph(MasterState)
     
     # Add Core Nodes
+    workflow.add_node("skill_router", skill_router_node)
+    workflow.add_node("skill_executor", skill_executor_node)
+    
     workflow.add_node("planner", planner_node)
     workflow.add_node("dispatcher", dispatcher_node)
     workflow.add_node("chitchat", chitchat_node)
@@ -460,7 +562,20 @@ def build_master_graph(checkpointer=None):
     workflow.add_node("human_approval", human_approval_node)
     
     # Entry Point
-    workflow.set_entry_point("planner")
+    workflow.set_entry_point("skill_router")
+    
+    # Skill Router Edges
+    workflow.add_conditional_edges(
+        "skill_router",
+        route_skill,
+        {
+            "skill_executor": "skill_executor",
+            "planner": "planner"
+        }
+    )
+    
+    # Skill Executor -> End
+    workflow.add_edge("skill_executor", END)
     
     # Planner -> Approval Routing
     workflow.add_conditional_edges(

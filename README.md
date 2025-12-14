@@ -20,10 +20,53 @@ As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts a
 ## 🌟 Key Features
 
 - **Micro-Kernel Architecture**: A lightweight and stable core system responsible for lifecycle management, context sharing, and resource scheduling.
+- **Skills Fast Track**: Provides a millisecond-level response execution path for simple commands (e.g., calculation, query), bypassing complex planning workflows.
 - **Plugin System**: All business capabilities (such as news reporting, tutorial generation, financial analysis, etc.) are implemented via plugins, enabling plug-and-play functionality.
 - **Agent Orchestration (LangGraph)**: Utilizes LangGraph to build complex stateful multi-agent workflows.
 - **MCP Support**: Integrates the Model Context Protocol (MCP) for standardized context and tool interactions.
 - **High-Performance Backend**: An asynchronous backend built with FastAPI, supporting SSE streaming responses.
+
+## 🏗️ Architecture Flow
+
+```mermaid
+graph TD
+    Start([Start]) --> SkillRouter[Skill Router<br/>(Fast Intent Recognition)]
+    
+    SkillRouter -->|Match Found| SkillExecutor[Skill Executor<br/>(Fast Execution)]
+    SkillExecutor --> End([End])
+    
+    SkillRouter -->|No Match| Planner[Planner Node<br/>(Global Planning)]
+    
+    Planner --> CheckApproval{Human Approval Needed?}
+    CheckApproval -- Yes --> HumanApproval[Human Approval<br/>(Interrupt Point)]
+    CheckApproval -- No --> Dispatcher
+    
+    HumanApproval --> Dispatcher[Dispatcher Node<br/>(Task Dispatching)]
+    
+    Dispatcher -->|Task Done| FinalAnswer[Final Answer<br/>(Result Summary)]
+    FinalAnswer --> End
+    
+    Dispatcher -->|Chitchat| ChitchatNode[Chitchat Node]
+    ChitchatNode --> Progress
+    
+    Dispatcher -->|Plugin A| PluginA[Plugin: Tutorial Generator]
+    Dispatcher -->|Plugin B| PluginB[Plugin: FTA Agent]
+    Dispatcher -->|Plugin C| PluginC[Plugin: News Reporter]
+    
+    subgraph Plugin Execution
+        PluginA --> Critic
+        PluginB --> Critic
+        PluginC --> Critic
+    end
+    
+    Critic[Critic Node<br/>(Evaluation/Scoring)]
+    
+    Critic -->|Satisfied| Progress[Progress Node<br/>(Step + 1)]
+    Critic -->|Retry (Feedback)| Dispatcher
+    Critic -->|Replan (Major Fail)| Planner
+    
+    Progress --> Dispatcher
+```
 
 ## 🛠️ Tech Stack
 
@@ -40,6 +83,7 @@ seerlord_ai/
 │   ├── core/           # Core configuration & LLM wrappers
 │   ├── kernel/         # Micro-kernel implementation (Registry, MCP Manager, Memory Manager)
 │   ├── plugins/        # Plugins directory (contains various Agent implementations)
+│   ├── skills/         # Skills directory (Fast Track atomic capabilities)
 │   └── main.py         # Application entry point
 ├── mcp_services/       # MCP service implementations
 ├── scripts/            # Utility scripts

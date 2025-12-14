@@ -7,11 +7,18 @@
 
 本项目采用 **"微内核 + 插件" (Micro-Kernel + Plugin)** 架构，结合 **LangGraph** 编排引擎，支持复杂的长运行任务和多 Agent 协作。
 
+新增 **Skills (技能)** 系统，提供轻量级的 "Fast Track" (快速通道)，用于处理简单、明确的指令，绕过复杂的规划流程。
+
 ### 架构流程图 (Architecture Diagram)
 
 ```mermaid
 graph TD
-    Start([Start]) --> Planner[Planner Node<br/>(意图识别/全局规划)]
+    Start([Start]) --> SkillRouter[Skill Router<br/>(快速意图识别)]
+    
+    SkillRouter -->|Match Found| SkillExecutor[Skill Executor<br/>(快速执行)]
+    SkillExecutor --> End([End])
+    
+    SkillRouter -->|No Match| Planner[Planner Node<br/>(全局规划)]
     
     Planner --> CheckApproval{需人工审批?}
     CheckApproval -- Yes --> HumanApproval[Human Approval<br/>(Interrupt Point)]
@@ -20,7 +27,7 @@ graph TD
     HumanApproval --> Dispatcher[Dispatcher Node<br/>(任务分发)]
     
     Dispatcher -->|Task Done| FinalAnswer[Final Answer<br/>(结果汇总)]
-    FinalAnswer --> End([End])
+    FinalAnswer --> End
     
     Dispatcher -->|Chitchat| ChitchatNode[Chitchat Node]
     ChitchatNode --> Progress
@@ -45,6 +52,12 @@ graph TD
 ```
 
 ### 核心组件
+
+*   **Skills (技能系统) [New]**:
+    *   位于 `server/skills/`。
+    *   **职责**: 处理单一、明确的原子任务（如“计算”、“查时间”）。
+    *   **特点**: **Fast Track**。不经过 Planner 和 Dispatcher，直接执行并返回，响应速度极快，Token 消耗低。
+    *   **注册**: 通过 `server/kernel/skill_registry.py` 自动扫描加载。
 
 *   **Micro-Kernel (微内核)**:
     *   位于 `server/kernel/`。
@@ -106,13 +119,17 @@ seerlord_ai/
 │   ├── kernel/                # [微内核]
 │   │   ├── interface.py       # [接口] 插件标准接口
 │   │   ├── registry.py        # [注册表] 插件自动发现
+│   │   ├── skill_registry.py  # [技能注册表] Skills 自动发现
 │   │   ├── master_graph.py    # [主图] 核心路由与编排
 │   │   ├── mcp_manager.py     # [MCP] Model Context Protocol 管理器
 │   │   └── persistence.py     # [持久化] 
-│   ├── plugins/               # [插件库]
+│   ├── plugins/               # [插件库] (复杂 Agent)
 │   │   ├── tutorial_generator/# [示例] 教程生成 Agent
 │   │   ├── fta_agent/         # [示例] 故障分析 Agent
 │   │   └── _example_agent/    # [模板] 标准开发模板 (不自动加载)
+│   ├── skills/                # [技能库] (原子能力)
+│   │   ├── calculator.py      # [示例] 计算器
+│   │   └── current_time.py    # [示例] 当前时间
 │   ├── static/                # [静态资源] Web 控制台
 │   └── main.py                # [入口] FastAPI 应用，生命周期管理
 ├── mcp.json                   # [MCP配置] 外部工具服务器配置

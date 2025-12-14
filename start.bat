@@ -16,7 +16,7 @@ set PYTHONPATH=%CD%
 :: 使用 --host 0.0.0.0 允许外部访问
 :: 使用 --workers 4 开启多进程模式（生产环境建议）
 :: 在 Windows 上，workers 可能有限制，这里使用 1 个 worker 但保留配置供参考
-.venv\Scripts\python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+.venv\Scripts\python -m server.main
 
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Server failed to start!

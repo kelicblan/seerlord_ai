@@ -20,10 +20,53 @@
 ## 🌟 项目亮点
 
 - **微内核架构 (Micro-Kernel)**: 核心系统轻量稳定，负责生命周期管理、上下文共享和资源调度。
+- **Skills 快速通道 (Fast Track)**: 针对简单指令（如计算、查询）提供毫秒级响应的技能执行路径，无需复杂的规划流程。
 - **插件化系统 (Plugin System)**: 所有的业务能力（如新闻播报、教程生成、金融分析等）均通过插件实现，即插即用。
 - **智能体编排 (LangGraph)**: 利用 LangGraph 构建复杂的有状态多智能体工作流。
 - **MCP 支持**: 集成 Model Context Protocol (MCP)，实现标准化的上下文和工具交互。
 - **高性能后端**: 基于 FastAPI 构建的异步后端，支持 SSE 流式响应。
+
+## 🏗️ 架构概览 (Architecture)
+
+```mermaid
+graph TD
+    Start([Start]) --> SkillRouter[Skill Router<br/>(快速意图识别)]
+    
+    SkillRouter -->|Match Found| SkillExecutor[Skill Executor<br/>(快速执行)]
+    SkillExecutor --> End([End])
+    
+    SkillRouter -->|No Match| Planner[Planner Node<br/>(全局规划)]
+    
+    Planner --> CheckApproval{需人工审批?}
+    CheckApproval -- Yes --> HumanApproval[Human Approval<br/>(Interrupt Point)]
+    CheckApproval -- No --> Dispatcher
+    
+    HumanApproval --> Dispatcher[Dispatcher Node<br/>(任务分发)]
+    
+    Dispatcher -->|Task Done| FinalAnswer[Final Answer<br/>(结果汇总)]
+    FinalAnswer --> End
+    
+    Dispatcher -->|Chitchat| ChitchatNode[Chitchat Node]
+    ChitchatNode --> Progress
+    
+    Dispatcher -->|Plugin A| PluginA[Plugin: Tutorial Generator]
+    Dispatcher -->|Plugin B| PluginB[Plugin: FTA Agent]
+    Dispatcher -->|Plugin C| PluginC[Plugin: News Reporter]
+    
+    subgraph Plugin Execution
+        PluginA --> Critic
+        PluginB --> Critic
+        PluginC --> Critic
+    end
+    
+    Critic[Critic Node<br/>(结果评估/打分)]
+    
+    Critic -->|Satisfied| Progress[Progress Node<br/>(Step + 1)]
+    Critic -->|Retry (Feedback)| Dispatcher
+    Critic -->|Replan (Major Fail)| Planner
+    
+    Progress --> Dispatcher
+```
 
 ## 🛠️ 技术栈
 
@@ -40,6 +83,7 @@ seerlord_ai/
 │   ├── core/           # 核心配置与 LLM 封装
 │   ├── kernel/         # 微内核实现 (注册表, MCP 管理, 记忆管理)
 │   ├── plugins/        # 插件目录 (包含各类 Agent 实现)
+│   ├── skills/         # 技能目录 (Fast Track 原子能力)
 │   └── main.py         # 应用入口
 ├── mcp_services/       # MCP 服务实现
 ├── scripts/            # 实用脚本
