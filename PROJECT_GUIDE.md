@@ -15,10 +15,10 @@
 graph TD
     Start([Start]) --> SkillRouter["Skill Router<br/>(快速意图识别)"]
     
-    SkillRouter -->|Match Found| SkillExecutor["Skill Executor<br/>(快速执行)"]
+    SkillRouter -->|"Match Found"| SkillExecutor["Skill Executor<br/>(快速执行)"]
     SkillExecutor --> End([End])
     
-    SkillRouter -->|No Match| Planner["Planner Node<br/>(全局规划)"]
+    SkillRouter -->|"No Match"| Planner["Planner Node<br/>(全局规划)"]
     
     Planner --> CheckApproval{"需人工审批?"}
     CheckApproval -- Yes --> HumanApproval["Human Approval<br/>(Interrupt Point)"]
@@ -26,15 +26,15 @@ graph TD
     
     HumanApproval --> Dispatcher["Dispatcher Node<br/>(任务分发)"]
     
-    Dispatcher -->|Task Done| FinalAnswer["Final Answer<br/>(结果汇总)"]
+    Dispatcher -->|"Task Done"| FinalAnswer["Final Answer<br/>(结果汇总)"]
     FinalAnswer --> End
     
     Dispatcher -->|Chitchat| ChitchatNode[Chitchat Node]
     ChitchatNode --> Progress
     
-    Dispatcher -->|Plugin A| PluginA[Plugin: Tutorial Generator]
-    Dispatcher -->|Plugin B| PluginB[Plugin: FTA Agent]
-    Dispatcher -->|Plugin C| PluginC[Plugin: News Reporter]
+    Dispatcher -->|"Plugin A"| PluginA[Plugin: Tutorial Generator]
+    Dispatcher -->|"Plugin B"| PluginB[Plugin: FTA Agent]
+    Dispatcher -->|"Plugin C"| PluginC[Plugin: News Reporter]
     
     subgraph PluginExecution ["Plugin Execution"]
         PluginA --> Critic
@@ -45,8 +45,8 @@ graph TD
     Critic["Critic Node<br/>(结果评估/打分)"]
     
     Critic -->|Satisfied| Progress["Progress Node<br/>(Step + 1)"]
-    Critic -->|Retry (Feedback)| Dispatcher
-    Critic -->|Replan (Major Fail)| Planner
+    Critic -->|"Retry (Feedback)"| Dispatcher
+    Critic -->|"Replan (Major Fail)"| Planner
     
     Progress --> Dispatcher
 ```
