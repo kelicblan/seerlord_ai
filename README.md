@@ -37,7 +37,7 @@ graph TD
     
     SkillRouter -->|No Match| Planner[Planner Node<br/>(Global Planning)]
     
-    Planner --> CheckApproval{Human Approval Needed?}
+    Planner --> CheckApproval{"Human Approval Needed?"}
     CheckApproval -- Yes --> HumanApproval[Human Approval<br/>(Interrupt Point)]
     CheckApproval -- No --> Dispatcher
     
@@ -53,7 +53,7 @@ graph TD
     Dispatcher -->|Plugin B| PluginB[Plugin: FTA Agent]
     Dispatcher -->|Plugin C| PluginC[Plugin: News Reporter]
     
-    subgraph Plugin Execution
+    subgraph PluginExecution ["Plugin Execution"]
         PluginA --> Critic
         PluginB --> Critic
         PluginC --> Critic
