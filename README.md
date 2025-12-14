@@ -30,20 +30,20 @@ As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts a
 
 ```mermaid
 graph TD
-    Start([Start]) --> SkillRouter[Skill Router<br/>(Fast Intent Recognition)]
+    Start([Start]) --> SkillRouter["Skill Router<br/>(Fast Intent Recognition)"]
     
-    SkillRouter -->|Match Found| SkillExecutor[Skill Executor<br/>(Fast Execution)]
+    SkillRouter -->|Match Found| SkillExecutor["Skill Executor<br/>(Fast Execution)"]
     SkillExecutor --> End([End])
     
-    SkillRouter -->|No Match| Planner[Planner Node<br/>(Global Planning)]
+    SkillRouter -->|No Match| Planner["Planner Node<br/>(Global Planning)"]
     
     Planner --> CheckApproval{"Human Approval Needed?"}
-    CheckApproval -- Yes --> HumanApproval[Human Approval<br/>(Interrupt Point)]
+    CheckApproval -- Yes --> HumanApproval["Human Approval<br/>(Interrupt Point)"]
     CheckApproval -- No --> Dispatcher
     
-    HumanApproval --> Dispatcher[Dispatcher Node<br/>(Task Dispatching)]
+    HumanApproval --> Dispatcher["Dispatcher Node<br/>(Task Dispatching)"]
     
-    Dispatcher -->|Task Done| FinalAnswer[Final Answer<br/>(Result Summary)]
+    Dispatcher -->|Task Done| FinalAnswer["Final Answer<br/>(Result Summary)"]
     FinalAnswer --> End
     
     Dispatcher -->|Chitchat| ChitchatNode[Chitchat Node]
@@ -59,9 +59,9 @@ graph TD
         PluginC --> Critic
     end
     
-    Critic[Critic Node<br/>(Evaluation/Scoring)]
+    Critic["Critic Node<br/>(Evaluation/Scoring)"]
     
-    Critic -->|Satisfied| Progress[Progress Node<br/>(Step + 1)]
+    Critic -->|Satisfied| Progress["Progress Node<br/>(Step + 1)"]
     Critic -->|Retry (Feedback)| Dispatcher
     Critic -->|Replan (Major Fail)| Planner
     
