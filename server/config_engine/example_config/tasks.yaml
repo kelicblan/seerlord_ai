@@ -1,0 +1,11 @@
+tasks:
+  - id: "analyze_crack"
+    description: "Analyze the root causes of a 2mm wide crack found in the concrete beam of Axis 3-A. Consider factors like concrete mix, curing process, and structural loading."
+    expected_output: "A detailed list of potential causes categorized by Material, Workmanship, and Design."
+    agent: "fault_analyst"
+
+  - id: "write_report"
+    description: "Write a summary report based on the fault analysis provided by the engineer."
+    expected_output: "A markdown formatted report including Executive Summary, Detailed Analysis, and Recommendations."
+    agent: "report_writer"
+    context: ["analyze_crack"]

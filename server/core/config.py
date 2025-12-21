@@ -96,4 +96,12 @@ class Settings(BaseSettings):
     LANGCHAIN_API_KEY: str | None = Field(None, description="LangChain API Key")
     LANGCHAIN_PROJECT: str = Field("default", description="LangChain Project Name")
 
+    # Auth
+    SECRET_KEY: str = Field("09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7", description="JWT Secret Key")
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # 首启初始化（仅当用户表为空时可用）
+    SETUP_TOKEN: str | None = Field(None, description="First-boot setup token. If not set, setup API is disabled.")
+
 settings = Settings()

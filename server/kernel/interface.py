@@ -24,6 +24,14 @@ class AgentPlugin(ABC):
         """
         pass
 
+    @property
+    def name_zh(self) -> str:
+        """
+        [可选] 插件的中文名称，用于前端展示。
+        如果未实现，前端可能会回退显示 ID (name)。
+        """
+        return ""
+
     @abstractmethod
     def get_graph(self) -> Runnable:
         """

@@ -1,9 +1,12 @@
 fastapi
 uvicorn
+langserve
 langchain
 langchain-openai
 langchain-ollama
 langgraph
+langgraph-checkpoint-postgres
+psycopg-binary
 pydantic
 loguru
 asyncpg
@@ -13,3 +16,10 @@ mcp
 python-dotenv
 zstandard
 qdrant-client
+sqlalchemy
+greenlet
+duckduckgo-search
+python-jose[cryptography]
+bcrypt
+python-multipart
+passlib[bcrypt]

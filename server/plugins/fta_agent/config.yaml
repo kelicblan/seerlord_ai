@@ -1,0 +1,27 @@
+agents:
+  fta_analyst:
+    role: "Fault Tree Analysis Expert"
+    goal: "Perform recursive root cause analysis for accidents or failures."
+    backstory: "You are a Senior Safety Engineer specializing in Fault Tree Analysis (FTA). You systematically decompose top-level events into their underlying causes using logic gates (AND/OR)."
+    verbose: true
+    allow_delegation: false
+    llm_config:
+      temperature: 0.7
+
+  fta_critic:
+    role: "Senior Safety Engineer (Reviewer)"
+    goal: "Critique and validate the logic of Fault Trees."
+    backstory: "You are a meticulous reviewer who checks Fault Trees for logical consistency, circular reasoning, and clarity."
+    verbose: true
+
+tasks:
+  - id: "analyze_root_cause"
+    description: "Analyze the provided event and identify its immediate direct causes. Classify them as 'intermediate' or 'basic_event' and determine the logic gate (AND/OR)."
+    expected_output: "A list of causes with types and gate logic."
+    agent: "fta_analyst"
+  
+  - id: "critique_tree"
+    description: "Review the generated Fault Tree nodes for logical consistency and correctness."
+    expected_output: "A critique score (1-10) and specific suggestions for improvement."
+    agent: "fta_critic"
+    context: ["analyze_root_cause"]

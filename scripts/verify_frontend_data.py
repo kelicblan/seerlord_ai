@@ -2,12 +2,16 @@ import httpx
 import json
 import sys
 import asyncio
+from loguru import logger
 
 # URL for the LangServe stream endpoint
 URL = "http://localhost:8001/api/v1/agent/stream_events"
 
 async def main():
-    print(f"Connecting to {URL}...")
+    """
+    验证前端/后端对接的关键接口是否可用（主要用于本地冒烟检查）。
+    """
+    logger.info(f"连接到流式接口：{URL}")
     
     # Input payload
     payload = {
@@ -75,22 +79,23 @@ async def main():
 
     # Verify Master Graph Endpoint
     GRAPH_URL = "http://localhost:8001/api/v1/agent/master/graph"
-    print(f"\nConnecting to {GRAPH_URL}...")
+    logger.info(f"连接到 Master Graph 接口：{GRAPH_URL}")
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(GRAPH_URL)
             if resp.status_code == 200:
                 data = resp.json()
                 if "mermaid" in data:
-                    print("\n[✅ MASTER GRAPH RETRIEVED]")
-                    print(f"Mermaid length: {len(data['mermaid'])} chars")
-                    print(f"Start: {data['mermaid'][:50]}...")
+                    mermaid = data.get("mermaid") or ""
+                    logger.success("已获取 Master Graph Mermaid")
+                    logger.info(f"Mermaid 长度：{len(mermaid)} chars")
+                    logger.info(f"Mermaid 开头：{mermaid[:50]}...")
                 else:
-                    print(f"[❌ ERROR] No mermaid key in response: {data}")
+                    logger.error(f"响应缺少 mermaid 字段：{data}")
             else:
-                print(f"[❌ ERROR] Status {resp.status_code}: {resp.text}")
+                logger.error(f"请求失败：status={resp.status_code} body={resp.text}")
     except Exception as e:
-        print(f"Error fetching graph: {e}")
+        logger.error(f"获取 Master Graph 失败：{e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

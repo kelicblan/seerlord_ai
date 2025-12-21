@@ -3,6 +3,7 @@ from uuid import uuid4
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from server.core.config import settings
 from server.core.llm import get_llm
@@ -135,7 +136,7 @@ def root_cause_analysis(state: FTAState):
         }
         
     except Exception as e:
-        print(f"FTA Analysis error: {e}")
+        logger.exception(f"FTA 分析失败：{e}")
         return {"processing_queue": queue[1:]} # 出错跳过
 
 def critique_tree(state: FTAState):

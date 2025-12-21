@@ -1,0 +1,232 @@
+from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
+from typing import Any, Dict, Optional, List
+import json
+import asyncio
+from loguru import logger
+from langchain_core.load.dump import dumpd
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from jose import jwt, JWTError
+
+from server.kernel.registry import registry
+from server.kernel.master_graph import build_master_graph
+from server.api.auth import get_current_tenant_id
+from server.core.database import get_db, SessionLocal
+from server.core.config import settings
+from server.models.user import User
+from server.models.llm_trace import LLMTrace
+from datetime import datetime
+
+router = APIRouter()
+
+# Optional Auth Dependency
+async def get_current_user_optional(
+    token: Optional[str] = Depends(OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token", auto_error=False)),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+    except JWTError:
+        return None
+        
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalars().first()
+    return user
+
+class StreamInput(BaseModel):
+    input: Dict[str, Any]
+    config: Optional[Dict[str, Any]] = None
+    version: str = "v2"
+
+@router.post("/stream_events")
+async def stream_events(
+    request: StreamInput,
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    user_info_str = f" (User: {current_user.username})" if current_user else " (No User Token)"
+    logger.info(f"Stream events request from {tenant_id}{user_info_str}")
+    
+    input_data = request.input
+    config = request.config or {}
+    
+    # Inject User Context
+    if current_user:
+        user_id = str(current_user.id)
+        # 1. Inject into Input (for Graph State)
+        input_data["user_id"] = user_id
+        input_data["tenant_id"] = tenant_id # Ensure tenant_id is also in input
+        
+        # 2. Inject into Config (for Checkpointers)
+        if "configurable" not in config:
+            config["configurable"] = {}
+        config["configurable"]["user_id"] = user_id
+        config["configurable"]["tenant_id"] = tenant_id
+    else:
+        # Fallback: Ensure tenant_id is passed
+        input_data["tenant_id"] = tenant_id
+        if "configurable" not in config:
+            config["configurable"] = {}
+        config["configurable"]["tenant_id"] = tenant_id
+        
+        if "metadata" not in config:
+            config["metadata"] = {}
+        config["metadata"]["tenant_id"] = tenant_id
+    
+    logger.info(f"Received Input: {input_data}")
+    logger.info(f"Received Config: {config}")
+
+    # Check plugin target
+    target_plugin = input_data.get("target_plugin")
+    
+    app = None
+    if target_plugin and target_plugin != "auto":
+        plugin = registry.get_plugin(target_plugin)
+        if plugin:
+            logger.info(f"Targeting plugin directly: {target_plugin}")
+            app = plugin.get_graph()
+        else:
+            logger.warning(f"Plugin {target_plugin} not found, using Master Graph")
+            
+    if not app:
+        # Build master graph
+        # Note: In production, we might want to cache this or use a singleton
+        # But build_master_graph() compiles the graph, so we should probably reuse it if possible.
+        # For now, let's call it.
+        app = build_master_graph()
+    
+    # [Middleware Fix] Inject Language Instruction for Direct Plugin Execution
+    # When routing manually to a plugin (not 'auto'), the Master Graph logic is skipped.
+    # We must inject the language preference into the messages manually.
+    if target_plugin and target_plugin != "auto":
+        language = input_data.get("language", "zh-CN")
+        lang_instruction = ""
+        if language == "en":
+            lang_instruction = "IMPORTANT: respond in English."
+        elif language == "zh-TW":
+            lang_instruction = "IMPORTANT: respond in Traditional Chinese (繁体中文)."
+        else:
+            lang_instruction = "IMPORTANT: respond in Simplified Chinese (简体中文)."
+            
+        # Prepend SystemMessage to messages list in input_data
+        if "messages" in input_data:
+            from langchain_core.messages import SystemMessage
+            # Convert dicts to objects if needed, but usually we just add a dict if input is raw dicts
+            # LangGraph usually handles dicts with 'type' key if using add_messages
+            # But let's check what format input_data['messages'] is in. 
+            # It comes from Pydantic StreamInput.input which is Dict[str, Any].
+            # Usually messages is a list of dicts: [{'type': 'human', 'content': '...'}]
+            
+            msgs = input_data["messages"]
+            if isinstance(msgs, list):
+                # Insert at the beginning
+                msgs.insert(0, {"type": "system", "content": lang_instruction})
+    
+    async def event_generator():
+        # Track active runs for tracing
+        active_traces = {} # run_id -> trace_dict
+        
+        try:
+            # LangGraph astream_events yields events
+            # We need to map them to SSE format
+            
+            async for event in app.astream_events(input_data, config=config, version="v2"):
+                # Serialize event to JSON
+                try:
+                    # Use dumpd to convert LangChain objects to serializable dicts
+                    serializable_event = dumpd(event)
+                    data = json.dumps(serializable_event)
+                    yield f"data: {data}\n\n"
+                    
+                    # --- DB Tracing Logic ---
+                    try:
+                        event_type = serializable_event.get("event")
+                        run_id = serializable_event.get("run_id")
+                        
+                        if event_type == "on_chat_model_start":
+                            data_payload = serializable_event.get("data", {})
+                            inp = data_payload.get("input", {})
+                            prompts_list = inp.get("messages", [])
+                            if not prompts_list:
+                                prompts_list = inp.get("prompts", [])
+                                
+                            active_traces[run_id] = {
+                                "run_id": run_id,
+                                "session_id": config.get("configurable", {}).get("thread_id"),
+                                "tenant_id": tenant_id,
+                                "user_id": str(current_user.id) if current_user else None,
+                                "model_name": serializable_event.get("name"),
+                                "prompts": dumpd(prompts_list),
+                                "start_time": datetime.now(),
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "total_tokens": 0
+                            }
+                            
+                        elif event_type == "on_chat_model_end":
+                            trace_data = active_traces.pop(run_id, None)
+                            if trace_data:
+                                data_payload = serializable_event.get("data", {})
+                                output = data_payload.get("output", {})
+                                
+                                # Try to extract usage metadata
+                                usage = None
+                                if output.get("usage_metadata"):
+                                    usage = output["usage_metadata"]
+                                elif output.get("response_metadata", {}).get("token_usage"):
+                                    u = output["response_metadata"]["token_usage"]
+                                    usage = {
+                                        "input_tokens": u.get("prompt_tokens", 0),
+                                        "output_tokens": u.get("completion_tokens", 0),
+                                        "total_tokens": u.get("total_tokens", 0)
+                                    }
+                                
+                                if usage:
+                                    trace_data["input_tokens"] = usage.get("input_tokens", 0)
+                                    trace_data["output_tokens"] = usage.get("output_tokens", 0)
+                                    trace_data["total_tokens"] = usage.get("total_tokens", 0)
+                                
+                                trace_data["outputs"] = dumpd(output)
+                                trace_data["end_time"] = datetime.now()
+                                
+                                # Save to DB asynchronously
+                                async with SessionLocal() as session:
+                                    try:
+                                        db_trace = LLMTrace(**trace_data)
+                                        session.add(db_trace)
+                                        await session.commit()
+                                    except Exception as db_err:
+                                        logger.error(f"Failed to save LLM trace: {db_err}")
+                                        
+                    except Exception as trace_err:
+                        # Don't break stream for tracing errors
+                        logger.warning(f"Error in tracing logic: {trace_err}")
+                    # ------------------------
+
+                except Exception as json_err:
+                    logger.error(f"Failed to serialize event: {json_err}")
+                    
+        except Exception as e:
+            logger.error(f"Error in stream_events: {e}")
+            yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@router.get("/master/graph")
+async def get_master_graph():
+    """Get Mermaid graph definition for Master Graph"""
+    try:
+        graph = build_master_graph()
+        mermaid = graph.get_graph().draw_mermaid()
+        return {"mermaid": mermaid}
+    except Exception as e:
+        logger.error(f"Failed to generate master graph: {e}")
+        return {"mermaid": None, "error": str(e)}

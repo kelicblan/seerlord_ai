@@ -11,6 +11,10 @@ class ExampleState(TypedDict):
     # Standard message history
     messages: Annotated[List[BaseMessage], add_messages]
     
+    # Context
+    tenant_id: str
+    user_id: str
+    
     # Inputs
     user_topic: str
     

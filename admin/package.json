@@ -1,0 +1,47 @@
+{
+  "name": "admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@guolao/vue-monaco-editor": "^1.6.0",
+    "@tanstack/vue-table": "^8.21.3",
+    "@types/js-yaml": "^4.0.9",
+    "@vueuse/core": "^14.1.0",
+    "axios": "^1.13.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "element-plus": "^2.12.0",
+    "js-yaml": "^4.1.1",
+    "lucide-vue-next": "^0.561.0",
+    "markstream-vue": "^0.0.3-beta.5",
+    "mermaid": "^11.12.2",
+    "pinia": "^3.0.4",
+    "tailwind-merge": "^3.4.0",
+    "vue": "^3.5.24",
+    "vue-i18n": "^11.2.2",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.4",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/tsconfig": "^0.8.1",
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~5.9.3",
+    "unplugin-auto-import": "^20.3.0",
+    "unplugin-vue-components": "^30.0.0",
+    "vite": "npm:rolldown-vite@7.2.5",
+    "vue-tsc": "^3.1.4"
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@7.2.5"
+  }
+}

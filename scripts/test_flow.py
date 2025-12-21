@@ -1,6 +1,7 @@
 import sys
 import os
 from langchain_core.messages import HumanMessage
+from loguru import logger
 
 # 添加项目根目录到 sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -8,7 +9,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from server.kernel.master_graph import build_master_graph
 
 async def run_test(input_text: str, expected_plugin: str):
-    print(f"\n--- Testing Input: '{input_text}' ---")
+    """
+    简单跑一遍 Master Graph 流程，用于观察规划输出与整体可用性。
+    """
+    logger.info(f"测试输入：{input_text}")
     
     master_graph = build_master_graph()
     
@@ -26,12 +30,12 @@ async def run_test(input_text: str, expected_plugin: str):
         # 注意：最终结果可能不是 target_plugin，因为 Graph 运行完了。
         # 我们可能需要检查 execution trace 或者 log。
         # 这里简单打印结果看看
-        print(f"Graph finished. Result keys: {result.keys()}")
+        logger.info(f"Graph 执行完成。Result keys: {list(result.keys())}")
         if "plan" in result:
-             print(f"Plan: {result['plan']}")
+             logger.info(f"Plan: {result['plan']}")
              
     except Exception as e:
-        print(f"❌ ERROR: {e}")
+        logger.exception(f"执行失败：{e}")
 
 if __name__ == "__main__":
     import asyncio

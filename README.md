@@ -16,9 +16,14 @@ As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts a
 2. **Production-Grade Stability**: Fully asynchronous (Asyncio) backend design, with built-in database connection pool management and global exception circuit breaking mechanisms, ensuring robust operation in high-concurrency scenarios.
 3. **Standardized Tool Ecosystem**: Fully integrates the **Model Context Protocol (MCP)**, making the connection between Agents and the external world (file systems, GitHub, databases) standardized and universal.
 4. **Controllable Design**: Deeply integrates **Human-in-the-loop** mode. Agents can automatically pause during critical planning execution, waiting for human approval or correction, making every step of AI safe and controllable.
+5. **Autonomous Evolutionary Skill Kernel (Voyager Agent)**: This is the **Core Highlight** of SeerLord AI. Unlike traditional agents with only preset generic capabilities, SeerLord integrates **Voyager Agent** as the foundational skill engine. It possesses the ability to **write code, self-correct, and accumulate/reuse skills**, enabling it to continuously learn new skills as tasks are executed, truly achieving "stronger with use."
 
 ## 🌟 Key Features
 
+- **Dual-Mode Routing**: Supports both "Auto" intent recognition mode and "Manual" agent selection mode. Users can rely on AI for automatic planning or explicitly specify an Agent (e.g., Tutorial Agent) for deterministic execution.
+- **Hierarchical Agent System**:
+  - **Base Agent (Voyager Agent - The Core)**: The soul of the project. As a universal skill kernel, it empowers the system with autonomous learning and evolutionary capabilities. All other agents are built upon it, invoking its dynamically generated skills to solve specific problems.
+  - **Business Agents**: e.g., `Tutorial Agent`, focused on domain-specific workflows. They do not reinvent the wheel but delegate to Voyager Agent for underlying capabilities, allowing them to focus on high-level logic.
 - **Micro-Kernel Architecture**: A lightweight and stable core system responsible for lifecycle management, context sharing, and resource scheduling.
 - **Skills Fast Track**: Provides a millisecond-level response execution path for simple commands (e.g., calculation, query), bypassing complex planning workflows.
 - **Plugin System**: All business capabilities (such as news reporting, tutorial generation, financial analysis, etc.) are implemented via plugins, enabling plug-and-play functionality.
@@ -30,12 +35,15 @@ As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts a
 
 ```mermaid
 graph TD
-    Start([Start]) --> SkillRouter["Skill Router<br/>(Fast Intent Recognition)"]
+    Start([Start]) --> CheckMode{"Manual Mode?"}
+    
+    CheckMode -- Yes --> Planner["Planner Node<br/>(Single Task Plan)"]
+    CheckMode -- No --> SkillRouter["Skill Router<br/>(Fast Intent Recognition)"]
     
     SkillRouter -->|"Match Found"| SkillExecutor["Skill Executor<br/>(Fast Execution)"]
     SkillExecutor --> End([End])
     
-    SkillRouter -->|"No Match"| Planner["Planner Node<br/>(Global Planning)"]
+    SkillRouter -->|"No Match"| Planner
     
     Planner --> CheckApproval{"Human Approval Needed?"}
     CheckApproval -- Yes --> HumanApproval["Human Approval<br/>(Interrupt Point)"]
@@ -54,9 +62,11 @@ graph TD
     Dispatcher -->|"Plugin C"| PluginC[Plugin: News Reporter]
     
     subgraph PluginExecution ["Plugin Execution"]
+        PluginA -.->|Delegate Skill| Voyager[Base: Voyager Agent]
         PluginA --> Critic
         PluginB --> Critic
         PluginC --> Critic
+        Voyager --> Critic
     end
     
     Critic["Critic Node<br/>(Evaluation/Scoring)"]

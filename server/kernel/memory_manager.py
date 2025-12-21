@@ -84,9 +84,9 @@ class MemoryManager:
             logger.error(f"❌ Failed to initialize MemoryManager: {e}")
             self.enabled = False
 
-    async def save_experience(self, content: str, agent_name: str, session_id: str, metadata: Dict[str, Any] = None):
+    async def save_experience(self, content: str, agent_name: str, session_id: str, tenant_id: str, user_id: str = None, metadata: Dict[str, Any] = None):
         """
-        Save a text fragment to memory with agent and session context.
+        Save a text fragment to memory with agent, session, tenant and optional user context.
         """
         if not self.enabled: return
         
@@ -100,6 +100,9 @@ class MemoryManager:
             payload["content"] = content
             payload["agent_name"] = agent_name
             payload["session_id"] = session_id
+            payload["tenant_id"] = tenant_id  # Multi-Tenancy Key
+            if user_id:
+                payload["user_id"] = user_id
             payload["created_at"] = datetime.now().isoformat()
             
             # 3. Upsert
@@ -113,31 +116,49 @@ class MemoryManager:
                     )
                 ]
             )
-            logger.debug(f"Saved memory for agent='{agent_name}': {content[:30]}...")
+            logger.debug(f"Saved memory for agent='{agent_name}' (Tenant: {tenant_id}, User: {user_id}): {content[:30]}...")
             
         except Exception as e:
             logger.error(f"Failed to save experience: {e}")
 
-    async def retrieve_relevant(self, query: str, agent_name: str = None, k: int = 5, threshold: float = 0.7) -> List[Dict]:
+    async def retrieve_relevant(self, query: str, tenant_id: str, user_id: str = None, agent_name: str = None, k: int = 5, threshold: float = 0.7) -> List[Dict]:
         """
-        Retrieve relevant memories, optionally filtered by agent_name.
+        Retrieve relevant memories. 
+        CRITICAL: Always filters by tenant_id to prevent data leakage.
+        Optionally filters by user_id if provided.
         """
         if not self.enabled: return []
         
         try:
             vector = await self.embeddings.aembed_query(query)
             
-            # Construct Filter if agent_name is provided
-            query_filter = None
-            if agent_name:
-                query_filter = models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="agent_name",
-                            match=models.MatchValue(value=agent_name)
-                        )
-                    ]
+            # Base Filter: Must match tenant_id
+            must_conditions = [
+                models.FieldCondition(
+                    key="tenant_id",
+                    match=models.MatchValue(value=tenant_id)
                 )
+            ]
+            
+            # Optional Filter: Match user_id
+            if user_id:
+                must_conditions.append(
+                    models.FieldCondition(
+                        key="user_id",
+                        match=models.MatchValue(value=user_id)
+                    )
+                )
+            
+            # Optional Filter: Match agent_name
+            if agent_name:
+                must_conditions.append(
+                    models.FieldCondition(
+                        key="agent_name",
+                        match=models.MatchValue(value=agent_name)
+                    )
+                )
+
+            query_filter = models.Filter(must=must_conditions)
 
             search_result = await self.client.query_points(
                 collection_name=settings.QDRANT_COLLECTION,
@@ -156,7 +177,9 @@ class MemoryManager:
                     "similarity": hit.score,
                     "created_at": payload.get("created_at"),
                     "agent_name": payload.get("agent_name"),
-                    "session_id": payload.get("session_id")
+                    "session_id": payload.get("session_id"),
+                    "tenant_id": payload.get("tenant_id"),
+                    "user_id": payload.get("user_id")
                 })
             return results
             

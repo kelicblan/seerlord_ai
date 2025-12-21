@@ -1,8 +1,14 @@
 import sys
 import asyncio
 import os
+from pathlib import Path
 
-# Fix for Windows and psycopg (must be done before any async loop starts)
+# 兼容直接运行 `python server/main.py`：确保项目根目录在 sys.path 中
+repo_root_for_import = Path(__file__).resolve().parents[1]
+if str(repo_root_for_import) not in sys.path:
+    sys.path.insert(0, str(repo_root_for_import))
+
+# Windows 下 psycopg 异步需要 SelectorEventLoop（必须在事件循环启动前设置）
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -13,10 +19,15 @@ from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from langserve import add_routes
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg_pool import AsyncConnectionPool
 from loguru import logger
+from langgraph.checkpoint.memory import MemorySaver
+try:
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+except ImportError:
+    AsyncPostgresSaver = None
+    logger.warning("Module 'langgraph.checkpoint.postgres.aio' not found. PostgreSQL persistence will be unavailable.")
+
+from psycopg_pool import AsyncConnectionPool
 import uvicorn
 
 from server.core.config import settings
@@ -24,6 +35,9 @@ from server.kernel.registry import registry
 from server.kernel.master_graph import build_master_graph
 from server.kernel.mcp_manager import mcp_manager
 from server.kernel.memory_manager import memory_manager
+from server.api.auth import TenantMiddleware
+from server.api.v1 import paas_agent, agent, login, users, skills
+from server.core.database import engine, Base, SessionLocal
 
 # -----------------------------------------------------------------------------
 # Global Resources
@@ -48,223 +62,181 @@ master_graph = build_master_graph(checkpointer)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Handle application startup and shutdown events.
-    Specifically manages the database connection pool and MCP servers.
+    应用生命周期钩子：负责启动/关闭阶段的资源初始化与释放。
+    主要工作：
+    - 初始化（可选）PostgreSQL Checkpointer，用于 LangGraph 持久化
+    - 初始化 Qdrant 记忆库
+    - 初始化 MCP 外部工具连接
+    - 初始化用户表结构（不再创建默认管理员，改为首启初始化接口）
     """
     logger.info("Starting SeerLord AI Kernel...")
     
     # 1. Database Connection Management
     if settings.DATABASE_URL:
-        logger.info("Opening Database Connection Pool...")
-        try:
-            pool = AsyncConnectionPool(
-                conninfo=settings.DATABASE_URL,
-                max_size=20,
-                open=False, # We will open it manually
-                kwargs={
-                    "autocommit": True,
-                    "prepare_threshold": 0,
-                },
-                min_size=1,
-                max_lifetime=300, # Recycle connections every 5 minutes
-                timeout=30, # Wait at most 30s for a connection
-                check=AsyncConnectionPool.check_connection 
-            )
-            await pool.open()
-            
-            logger.info("Initializing PostgreSQL Checkpointer...")
-            real_checkpointer = AsyncPostgresSaver(pool)
-            
-            # Initialize tables if needed
-            await real_checkpointer.setup()
-            
-            # Hot-Swap Checkpointer in Compiled Graph
-            logger.info("Swapping Master Graph Checkpointer to PostgreSQL...")
-            master_graph.checkpointer = real_checkpointer
-            
-            # Store pool in app state for cleanup
-            app.state.db_pool = pool
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize Database: {e}")
+        should_init_postgres_checkpointer = True
+        if sys.platform == "win32":
+            running_loop = asyncio.get_running_loop()
+            if running_loop.__class__.__name__ == "ProactorEventLoop":
+                should_init_postgres_checkpointer = False
+                logger.warning("检测到 Windows ProactorEventLoop，psycopg 异步不兼容，将跳过 PostgreSQL Checkpointer 初始化")
+
+        if should_init_postgres_checkpointer:
+            if AsyncPostgresSaver is None:
+                logger.warning("AsyncPostgresSaver is unavailable (import failed). Falling back to In-Memory persistence.")
+            else:
+                logger.info("Opening Database Connection Pool...")
+                try:
+                    pool = AsyncConnectionPool(
+                        conninfo=settings.DATABASE_URL,
+                        max_size=20,
+                        open=False, # We will open it manually
+                        kwargs={
+                            "autocommit": True,
+                            "prepare_threshold": 0,
+                        },
+                        min_size=1,
+                        max_lifetime=300, # Recycle connections every 5 minutes
+                        timeout=30, # Wait at most 30s for a connection
+                        check=AsyncConnectionPool.check_connection 
+                    )
+                    await pool.open()
+                    
+                    logger.info("Initializing PostgreSQL Checkpointer...")
+                    real_checkpointer = AsyncPostgresSaver(pool)
+                    
+                    # Initialize tables if needed
+                    await real_checkpointer.setup()
+                    
+                    # Hot-Swap Checkpointer in Compiled Graph
+                    logger.info("Swapping Master Graph Checkpointer to PostgreSQL...")
+                    master_graph.checkpointer = real_checkpointer
+                    
+                    # Store pool in app state for cleanup
+                    app.state.db_pool = pool
+                    
+                except Exception as e:
+                    logger.error(f"Failed to initialize Database: {e}")
+                    logger.warning("System running with In-Memory persistence (Data will be lost on restart)")
+        else:
             logger.warning("System running with In-Memory persistence (Data will be lost on restart)")
     else:
         logger.warning("No DATABASE_URL found. System running with In-Memory persistence.")
     
-    # 2. Initialize MCP Manager
-    mcp_config_path = "mcp.json"
-    if os.path.exists(mcp_config_path):
-        logger.info(f"Initializing MCP Manager from {mcp_config_path}...")
-        await mcp_manager.load_config(mcp_config_path)
-    else:
-        logger.info("No mcp.json found, skipping MCP initialization.")
-
-    # 3. Initialize Memory Manager (Long-term Memory)
-    logger.info("Initializing Memory Manager...")
+    # 2. Initialize Memory Manager (Qdrant)
+    logger.info("Initializing Memory Manager (Qdrant)...")
     await memory_manager.initialize()
+
+    # 3. Initialize MCP Manager
+    # MCP 配置文件默认在项目根目录，避免工作目录变化导致找不到配置
+    repo_root = Path(__file__).resolve().parents[1]
+    mcp_config_path = repo_root / "mcp.json"
+    if mcp_config_path.exists():
+        logger.info(f"Initializing MCP Manager from {mcp_config_path}...")
+        await mcp_manager.load_config(str(mcp_config_path))
+    else:
+        logger.info(f"No mcp.json found at {mcp_config_path}, skipping MCP initialization.")
+    
+    # 4. Initialize User DB
+    logger.info("Initializing User Database...")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     yield
     
     # Cleanup
     logger.info("Shutting down SeerLord AI Kernel...")
-    
-    # 1. Close Memory Manager
-    await memory_manager.close()
-    
-    # 2. Close MCP connections
-    await mcp_manager.close_all()
-    
-    # 3. Close Database Pool
     if hasattr(app.state, "db_pool"):
         logger.info("Closing Database Connection Pool...")
         await app.state.db_pool.close()
 
+    # 关闭 MCP 子进程/会话，避免热重载或退出时残留
+    try:
+        await mcp_manager.close_all()
+    except Exception as e:
+        logger.warning(f"Failed to close MCP sessions cleanly: {e}")
+
 app = FastAPI(
     title="SeerLord AI Kernel",
     version="1.0.0",
-    description="Micro-kernel Agent Platform with LangGraph",
+    description="Micro-Kernel Agent Orchestration Platform",
     lifespan=lifespan
 )
 
 # -----------------------------------------------------------------------------
-# Middleware & Exception Handlers
+# Middleware
 # -----------------------------------------------------------------------------
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Global Exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"message": "Internal Server Error", "detail": str(exc)},
-    )
-
-# -----------------------------------------------------------------------------
-# LangServe Routes
-# -----------------------------------------------------------------------------
-def per_req_config_modifier(config: Dict[str, Any], request: Request) -> Dict[str, Any]:
-    """
-    Modify configuration per request.
-    Injects default thread_id for playground if missing.
-    """
-    config = config.copy()
-    configurable = config.get("configurable", {})
-    if "thread_id" not in configurable:
-        configurable["thread_id"] = "default_playground_thread"
-        config["configurable"] = configurable
-    return config
-
-add_routes(
-    app,
-    master_graph,
-    path="/api/v1/agent",
-    playground_type="default",
-    per_req_config_modifier=per_req_config_modifier,
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+app.add_middleware(TenantMiddleware)
 
 # -----------------------------------------------------------------------------
-# API Endpoints
+# Routes
 # -----------------------------------------------------------------------------
-@app.get("/api/v1/health")
-async def health_check():
-    return {"status": "ok", "version": "1.0.0"}
 
 @app.get("/api/v1/plugins")
 async def get_plugins():
-    """
-    Get list of loaded plugins.
-    """
-    return [
-        {"id": name, "name": p.name, "description": p.description}
-        for name, p in registry.plugins.items()
-    ]
+    """Get list of available agent plugins"""
+    plugins = []
+    for pid, plugin in registry._plugins.items():
+        if pid.startswith("_"):
+            continue
+            
+        plugins.append({
+            "id": pid,
+            "name": plugin.name,
+            "name_zh": plugin.name_zh,
+            "description": plugin.description,
+            "type": "application"
+        })
+    return plugins
 
 @app.get("/api/v1/mcp/status")
 async def get_mcp_status():
-    """
-    Get the status of MCP servers.
-    """
+    """Get status of MCP servers and tools"""
+    # Use the manager's summary method which has accurate tool counts
     return mcp_manager.get_status_summary()
 
-@app.get("/api/v1/agent/{plugin_id}/graph")
-async def get_agent_graph(plugin_id: str):
-    """
-    Get the Mermaid graph definition for a specific agent plugin.
-    Use 'master' as plugin_id to get the main workflow graph.
-    """
-    if plugin_id == "master":
-        try:
-            mermaid_syntax = master_graph.get_graph().draw_mermaid()
-            return {"mermaid": mermaid_syntax}
-        except Exception as e:
-            logger.error(f"Failed to generate master graph: {e}")
-            return {"error": str(e)}
-
-    plugin = registry.plugins.get(plugin_id)
+@app.get("/api/v1/agent/{agent_id}/graph")
+async def get_agent_graph(agent_id: str):
+    """Get Mermaid graph definition for an agent"""
+    plugin = registry.get_plugin(agent_id)
     if not plugin:
-        raise HTTPException(status_code=404, detail="Plugin not found")
-    
+        raise HTTPException(status_code=404, detail="Agent not found")
+        
     try:
-        compiled_graph = plugin.get_graph()
-        mermaid_syntax = compiled_graph.get_graph().draw_mermaid()
-        return {"mermaid": mermaid_syntax}
+        graph = plugin.get_graph()
+        mermaid = graph.get_graph().draw_mermaid()
+        return {"mermaid": mermaid}
     except Exception as e:
-        logger.error(f"Failed to generate graph for {plugin_id}: {e}")
-        return {"error": str(e)}
+        logger.error(f"Failed to generate graph for {agent_id}: {e}")
+        return {"mermaid": None, "error": str(e)}
 
-@app.get("/api/v1/agent/execution_log/{thread_id}")
-async def get_execution_log(thread_id: str):
-    """
-    Get execution history (state snapshots) for a specific thread.
-    """
-    try:
-        config = {"configurable": {"thread_id": thread_id}}
-        # Note: master_graph is a CompiledGraph
-        # Use async iterator for AsyncPostgresSaver
-        history = []
-        async for snapshot in master_graph.aget_state_history(config):
-            history.append({
-                "values": snapshot.values,
-                "next": list(snapshot.next) if snapshot.next else [],
-                "config": snapshot.config,
-                "metadata": snapshot.metadata,
-                "created_at": snapshot.created_at,
-                "parent_config": snapshot.parent_config
-            })
-             
-        return history
-    except Exception as e:
-        logger.error(f"Failed to get execution log for {thread_id}: {e}")
-        return {"error": str(e)}
+# Mount PaaS API
+app.include_router(paas_agent.router, prefix="/api/v1/paas", tags=["PaaS"])
+app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
+app.include_router(login.router, prefix="/api/v1", tags=["Auth"])
+app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
+app.include_router(skills.router, prefix="/api/v1/skills", tags=["Skills"])
 
-# -----------------------------------------------------------------------------
-# Static Files & Frontend
-# -----------------------------------------------------------------------------
-# Mount static files
-app.mount("/static", StaticFiles(directory="server/static"), name="static")
+# LangServe Routes (Legacy/Direct Graph Access)
+add_routes(
+    app,
+    master_graph,
+    path="/agent",
+)
 
-@app.get("/")
-async def root():
-    return FileResponse("server/static/index.html")
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "version": "1.0.0"}
 
-@app.get("/.well-known/appspecific/com.chrome.devtools.json")
-async def chrome_devtools_config():
-    return {}
-
-# Fix for Playground path issues (LangServe Frontend Bug Fix)
-@app.post("/api/v1/agent/playground/{path:path}")
-async def proxy_playground_api(path: str, request: Request):
-    target_url = f"/api/v1/agent/{path}"
-    if request.url.query:
-        target_url += f"?{request.url.query}"
-    return RedirectResponse(url=target_url, status_code=307)
+# Static Files (Frontend)
+if os.path.exists("server/static"):
+    app.mount("/", StaticFiles(directory="server/static", html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

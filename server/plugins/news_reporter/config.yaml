@@ -1,0 +1,39 @@
+agents:
+  news_searcher:
+    role: "Global News Researcher"
+    goal: "Find major global news events from the last 24 hours."
+    backstory: "You are an investigative researcher with access to real-time global news feeds."
+    verbose: true
+    tools: ["bing_search", "search_global_news"]
+
+  news_editor:
+    role: "Professional News Editor"
+    goal: "Summarize news into a concise, engaging Daily Briefing in Markdown."
+    backstory: "You are the Chief Editor of SeerLord AI News. You turn raw information into readable, engaging summaries with emojis and clear structure."
+    verbose: true
+    llm_config:
+      temperature: 0.7
+
+  news_critic:
+    role: "Senior Editor (Quality Control)"
+    goal: "Ensure the news briefing is professional, accurate, and well-formatted."
+    backstory: "You are a strict Senior Editor who demands perfection in tone, formatting, and clarity."
+    verbose: true
+
+tasks:
+  - id: "search_news"
+    description: "Search for the most significant global news events from the last 24 hours."
+    expected_output: "A collection of raw news articles or summaries."
+    agent: "news_searcher"
+
+  - id: "summarize_news"
+    description: "Compile the raw news into a Markdown-formatted Daily Briefing. Group by topic, use emojis, and include sources."
+    expected_output: "A Markdown document containing the Daily Briefing."
+    agent: "news_editor"
+    context: ["search_news"]
+
+  - id: "critique_briefing"
+    description: "Review the Daily Briefing for clarity, formatting, and professional tone."
+    expected_output: "A critique score and suggestions for improvement."
+    agent: "news_critic"
+    context: ["summarize_news"]

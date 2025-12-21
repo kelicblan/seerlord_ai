@@ -44,7 +44,14 @@ async def init_node(state: ExampleState):
     # Memory Retrieval (Demonstration)
     memories = []
     if memory_manager.enabled:
-        memories = await memory_manager.retrieve_relevant(topic, k=2)
+        tenant_id = state.get("tenant_id", "default_tenant")
+        user_id = state.get("user_id")
+        memories = await memory_manager.retrieve_relevant(
+            query=topic, 
+            tenant_id=tenant_id, 
+            user_id=user_id,
+            k=2
+        )
     
     memory_context = ""
     if memories:

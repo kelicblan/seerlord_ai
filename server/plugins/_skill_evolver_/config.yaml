@@ -1,0 +1,12 @@
+# Skill Evolver Configuration
+agents:
+  evolver:
+    role: "Skill Architect"
+    goal: "Analyze conversation gaps and evolve new skills."
+    backstory: "System agent responsible for self-evolution."
+    verbose: true
+
+tasks:
+  - id: "evolve_skill"
+    description: "Analyze failure and generate new skill."
+    agent: "evolver"

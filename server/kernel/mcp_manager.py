@@ -2,7 +2,7 @@ import asyncio
 import sys
 import shutil
 import json
-from typing import Dict, List, Optional, Any, Type
+from typing import Dict, List, Optional, Any, Type, Tuple
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
@@ -17,58 +17,218 @@ class MCPManager:
     Manages connections to MCP servers and exposes their tools.
     """
     def __init__(self):
+        """
+        MCP 管理器：负责读取配置、连接 MCP Server，并将其工具转换为 LangChain 工具。
+        """
         self._exit_stack = AsyncExitStack()
         self._sessions: Dict[str, ClientSession] = {}
         self._tools: Dict[str, List[BaseTool]] = {}
+        self._server_configs: Dict[str, Dict[str, Any]] = {}
+        self._server_errors: Dict[str, str] = {}
+        self._config_path: Optional[str] = None
+
+    def get_status_summary(self) -> Dict[str, Any]:
+        """
+        返回所有 Server 的状态汇总，供前端展示。
+        格式:
+        {
+            "servers": [
+                {
+                    "name": "filesystem",
+                    "status": "connected", # connected, disconnected, error
+                    "tool_count": 5,
+                    "tools": [ ...tool_info... ],
+                    "error": null
+                }
+            ]
+        }
+        """
+        result = []
+        
+        # 1. 遍历所有配置中的 server（包括未连接的）
+        all_servers = set(self._server_configs.keys())
+        
+        for name in all_servers:
+            status = "disconnected"
+            error = self._server_errors.get(name)
+            tool_count = 0
+            tools_info = []
+            
+            if name in self._sessions:
+                status = "connected"
+                # 获取该 server 下的所有 tools
+                tools = self._tools.get(name, [])
+                tool_count = len(tools)
+                for t in tools:
+                    tools_info.append({
+                        "name": t.name,
+                        "description": t.description,
+                        "args_schema": t.args_schema.schema() if t.args_schema else {}
+                    })
+            
+            if error:
+                status = "error"
+
+            result.append({
+                "name": name,
+                "status": status,
+                "tool_count": tool_count,
+                "tools": tools_info,
+                "error": error,
+                "config": self._server_configs.get(name, {})
+            })
+            
+        total_servers = len(result)
+        total_tools = sum(s["tool_count"] for s in result)
+
+        return {
+            "servers": result,
+            "total_servers": total_servers,
+            "total_tools": total_tools
+        }
+
+    def _resolve_config_path(self, config_path: str) -> Optional[str]:
+        """
+        解析 MCP 配置路径：
+        - 先按原样/当前工作目录解析
+        - 若不存在，回退到项目根目录（相对 server/ 目录推断）
+        """
+        import os
+
+        if os.path.isabs(config_path) and os.path.exists(config_path):
+            return config_path
+
+        cwd_candidate = os.path.abspath(config_path)
+        if os.path.exists(cwd_candidate):
+            return cwd_candidate
+
+        repo_root_candidate = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", config_path)
+        )
+        if os.path.exists(repo_root_candidate):
+            return repo_root_candidate
+
+        return None
+
+    def _normalize_server_command_args(
+        self, *, config_dir: str, command: Optional[str], args: List[str]
+    ) -> Tuple[Optional[str], List[str]]:
+        """
+        规范化 server 的 command/args：
+        - 将 python/node 的脚本参数（相对路径）按 config_dir 变为绝对路径
+        """
+        import os
+
+        if not command:
+            return command, args
+
+        if not args:
+            return command, args
+
+        script_like = args[0]
+        is_script = any(
+            script_like.lower().endswith(ext) for ext in (".py", ".js", ".mjs", ".cjs")
+        )
+        if is_script and not os.path.isabs(script_like):
+            args = list(args)
+            args[0] = os.path.abspath(os.path.join(config_dir, script_like))
+
+        return command, args
+
+    def _resolve_executable(self, command: str) -> str:
+        """
+        解析可执行文件路径（兼容 Windows 的 *.cmd / *.exe）。
+        """
+        if command == "python":
+            return sys.executable
+
+        executable = shutil.which(command)
+        if executable:
+            return executable
+
+        if sys.platform == "win32":
+            for suffix in (".cmd", ".exe", ".bat"):
+                alt = shutil.which(f"{command}{suffix}")
+                if alt:
+                    return alt
+
+        return command
 
     async def load_config(self, config_path: str = "mcp.json"):
         """
-        Loads MCP servers from a configuration file.
+        从配置文件加载 MCP servers，并尝试建立连接。
+        注意：即使连接失败，也会把“已配置/失败原因”写入状态，便于前端展示与排障。
         """
         import os
-        
-        if not os.path.exists(config_path):
+
+        resolved = self._resolve_config_path(config_path)
+        if not resolved:
             logger.warning(f"MCP config file not found: {config_path}")
             return
 
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            self._config_path = resolved
+            config_dir = os.path.dirname(os.path.abspath(resolved))
+
+            with open(resolved, "r", encoding="utf-8") as f:
                 config = json.load(f)
-            
+
             servers = config.get("mcpServers", {})
-            for name, server_config in servers.items():
+            if not isinstance(servers, dict):
+                logger.error(f"Invalid MCP config format: mcpServers must be an object, got {type(servers)}")
+                return
+
+            self._server_configs = {k: v for k, v in servers.items() if isinstance(v, dict)}
+
+            for name, server_config in self._server_configs.items():
                 command = server_config.get("command")
                 args = server_config.get("args", [])
-                env = server_config.get("env") # Optional env vars
-                
-                # Handle relative paths for python scripts if needed
-                # If command is python and first arg ends with .py, make it absolute
-                if command == "python" and args and args[0].endswith(".py"):
-                    # Assuming relative to CWD (project root)
-                    if not os.path.isabs(args[0]):
-                        args[0] = os.path.abspath(args[0])
+                env = server_config.get("env")  # Optional env vars
+
+                if not isinstance(args, list):
+                    args = []
+
+                # 关键：脚本路径以配置文件所在目录为基准，避免工作目录变化导致找不到文件
+                command, args = self._normalize_server_command_args(
+                    config_dir=config_dir, command=command, args=args
+                )
+                server_config["command"] = command
+                server_config["args"] = args
+
+                # 基础校验：脚本型 server 在连接前先校验入口文件是否存在，避免无意义的启动/报错
+                if command in ("python", "node") and args:
+                    entry = str(args[0])
+                    if "{ABSOLUTE PATH" in entry.upper():
+                        self._server_errors[name] = "入口脚本路径未配置（请替换为真实绝对路径）"
+                        continue
+
+                    if any(entry.lower().endswith(ext) for ext in (".py", ".js", ".mjs", ".cjs")):
+                        if os.path.isabs(entry) and not os.path.exists(entry):
+                            self._server_errors[name] = f"入口脚本不存在：{entry}"
+                            continue
 
                 try:
+                    self._server_errors.pop(name, None)
                     await self.connect_to_server(name, command, args, env)
                 except Exception as e:
-                    logger.error(f"Failed to connect to MCP server {name}: {e}")
-                    # Continue loading other servers
-                
-        except Exception as e:
-            logger.error(f"Failed to load MCP config from {config_path}: {e}")
+                    err = str(e)
+                    self._server_errors[name] = err
+                    logger.error(f"Failed to connect to MCP server {name}: {err}")
+                    # 继续加载其他 server，避免单点失败导致整体不可用
 
-    async def connect_to_server(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]] = None):
+        except Exception as e:
+            logger.error(f"Failed to load MCP config from {resolved}: {e}")
+
+    async def connect_to_server(self, name: str, command: Optional[str], args: List[str], env: Optional[Dict[str, str]] = None):
         """
-        Connects to an MCP server via stdio.
+        通过 stdio 连接 MCP server。
         """
+        if not command:
+            raise ValueError("MCP server command is required")
+
         logger.info(f"Connecting to MCP server '{name}' via command: {command} {args}")
         
-        # Use sys.executable if command is 'python' to ensure we use the same venv
-        if command == 'python':
-            import sys
-            executable = sys.executable
-        else:
-            executable = shutil.which(command) or command
+        executable = self._resolve_executable(command)
 
         server_params = StdioServerParameters(
             command=executable,
@@ -203,31 +363,14 @@ class MCPManager:
         Close all sessions and the exit stack.
         """
         logger.info("Closing all MCP sessions...")
-        await self._exit_stack.aclose()
+        try:
+            await self._exit_stack.aclose()
+        except Exception as e:
+            # Windows/AnyIO 下偶发出现异步生成器无法正常收敛的情况，这里降级为告警，避免影响服务退出
+            logger.warning(f"Failed to close MCP sessions cleanly: {e}")
         self._sessions.clear()
         self._tools.clear()
-
-    def get_status_summary(self) -> Dict[str, Any]:
-        """
-        Returns a summary of connected MCP servers and tools.
-        """
-        servers_info = []
-        total_tools = 0
-        
-        for name, session in self._sessions.items():
-            tool_count = len(self._tools.get(name, []))
-            total_tools += tool_count
-            servers_info.append({
-                "name": name,
-                "status": "connected", # If it's in _sessions, it's connected
-                "tool_count": tool_count
-            })
-            
-        return {
-            "servers": servers_info,
-            "total_servers": len(self._sessions),
-            "total_tools": total_tools
-        }
+        self._exit_stack = AsyncExitStack()
 
     async def close(self):
         """

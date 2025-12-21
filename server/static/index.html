@@ -240,7 +240,12 @@
         </div>
         <div class="input-area">
             <select id="agentSelector" style="max-width: 150px;">
-                <option value="">Auto</option>
+                <!-- Options loaded via JS -->
+            </select>
+            <select id="languageSelector" style="max-width: 100px;">
+                <option value="zh-CN">简体中文</option>
+                <option value="zh-TW">繁体中文</option>
+                <option value="en">English</option>
             </select>
             <input type="text" id="userInput" placeholder="输入您的指令..." onkeypress="handleKeyPress(event)">
             <button onclick="sendMessage()" id="sendBtn">发送</button>
@@ -295,6 +300,12 @@
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const agentSelector = document.getElementById('agentSelector');
+    const languageSelector = document.getElementById('languageSelector');
+    
+    // Use onchange property to prevent duplicate listeners
+    agentSelector.onchange = (e) => {
+        loadAgentGraph(e.target.value);
+    };
     
     // Dashboard elements
     const statusMetric = document.getElementById('statusMetric');
@@ -309,21 +320,58 @@
     let threadId = "web-test-" + Date.now();
     let availablePlugins = []; // Store plugin IDs
     
-    // Mermaid Init
-    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    // Mermaid Init (Safe Check)
+    if (typeof mermaid !== 'undefined') {
+        try {
+            mermaid.initialize({ startOnLoad: false, theme: 'default' });
+        } catch (e) {
+            console.warn("Mermaid init failed:", e);
+        }
+    } else {
+        console.warn("Mermaid library not loaded (CDN issue?)");
+    }
 
     // 初始化：加载插件列表和MCP状态
     async function loadPlugins() {
         try {
-            const response = await fetch('/api/v1/plugins');
+            // Add API Key for auth
+            const response = await fetch('/api/v1/plugins', {
+                headers: {
+                    'X-API-Key': 'sk-admin-test'
+                }
+            });
+            if (!response.ok) {
+                if (response.status === 401) {
+                     console.warn("Auth failed, trying without key (dev mode)...");
+                }
+                // Continue if possible or throw
+                // throw new Error("Auth failed");
+            }
             const plugins = await response.json();
             availablePlugins = plugins.map(p => p.id);
+            
+            // Clear existing options (in case of reload)
+            agentSelector.innerHTML = '';
+            
+            if (plugins.length === 0) {
+                 const option = document.createElement('option');
+                 option.text = "No plugins found";
+                 agentSelector.add(option);
+                 return;
+            }
+
             plugins.forEach(plugin => {
                 const option = document.createElement('option');
                 option.value = plugin.id;
                 option.textContent = `${plugin.name}`;
                 agentSelector.appendChild(option);
             });
+            
+            // Trigger graph load for the default selected agent
+            if (agentSelector.value) {
+                loadAgentGraph(agentSelector.value);
+            }
+
         } catch (error) {
             console.error("Failed to load plugins:", error);
             addMessage('ai', 'System Error: Failed to load plugin list.');
@@ -337,9 +385,19 @@
             return;
         }
         
+        // Check Mermaid availability
+        if (typeof mermaid === 'undefined') {
+            graphDiv.innerHTML = "Mermaid library not loaded. Cannot render graph. (Check internet connection)";
+            return;
+        }
+
         graphDiv.innerHTML = "Loading graph...";
         try {
-            const response = await fetch(`/api/v1/agent/${agentId}/graph`);
+            const response = await fetch(`/api/v1/agent/${agentId}/graph`, {
+                headers: {
+                    'X-API-Key': 'sk-admin-test'
+                }
+            });
             const data = await response.json();
             
             if (data.mermaid) {
@@ -380,18 +438,26 @@
         });
     }
 
-    agentSelector.addEventListener('change', (e) => {
+    // Event listener is already added in loadPlugins logic or init
+    // But let's keep one clear listener here and remove others if needed.
+    // NOTE: We have another listener around line 300, let's consolidate.
+    // To be safe, we assign onclick or onchange property to avoid duplicates if re-run
+    agentSelector.onchange = (e) => {
         loadAgentGraph(e.target.value);
-    });
+    };
     
     async function loadMCPStatus() {
         try {
-            const response = await fetch('/api/v1/mcp/status');
-            const status = await response.json();
+            const response = await fetch('/api/v1/mcp/status', {
+                headers: {
+                    'X-API-Key': 'sk-admin-test'
+                }
+            });
+            const data = await response.json();
             
-            let html = `Total Servers: ${status.total_servers} | Total Tools: ${status.total_tools}<br>`;
+            let html = `Total Servers: ${data.total_servers} | Total Tools: ${data.total_tools}<br>`;
             html += `<div style="display:flex; gap:10px; margin-top:5px; flex-wrap:wrap;">`;
-            status.servers.forEach(server => {
+            data.servers.forEach(server => {
                 html += `<span style="background:#e9ecef; padding:2px 8px; border-radius:4px; font-size:0.8em;">
                     ${server.name} (${server.tool_count} tools) <span style="color:green">●</span>
                 </span>`;
@@ -474,6 +540,7 @@
 
         try {
             const selectedAgent = agentSelector.value;
+            const selectedLanguage = languageSelector.value;
             const payload = {
                 input: {
                     messages: [
@@ -481,7 +548,8 @@
                             type: "human",
                             content: text
                         }
-                    ]
+                    ],
+                    language: selectedLanguage
                 },
                 config: {
                     configurable: {
@@ -500,6 +568,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-API-Key': 'sk-admin-test'
                 },
                 body: JSON.stringify({
                     input: payload.input,
@@ -575,6 +644,19 @@
                             else if (eventType === 'on_chain_end' && eventName && eventName !== 'LangGraph' && !eventName.startsWith('__')) {
                                 logEvent("NODE", `Finished: ${eventName}`);
                                 highlightNode(eventName, 'completed');
+
+                                // Fallback: Capture output from task nodes if streaming didn't populate the message
+                                if (eventData.data && eventData.data.output && eventData.data.output.results && eventData.data.output.results[eventName]) {
+                                    const nodeResult = eventData.data.output.results[eventName];
+                                    // If we haven't received streaming content, use the node result
+                                    if (!currentAiMessage && nodeResult) {
+                                        currentAiMessage = nodeResult;
+                                        const formatted = currentAiMessage
+                                            .replace(/\n/g, '<br>')
+                                            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                                        aiBubble.innerHTML = formatted;
+                                    }
+                                }
                             }
 
                             // --- LLM Model Events ---
@@ -585,8 +667,11 @@
                             // --- Streaming Content (Chat Model) ---
                             else if (eventType === 'on_chat_model_stream') {
                                 const chunk = eventData.data.chunk;
-                                if (chunk && chunk.content) {
-                                    currentAiMessage += chunk.content;
+                                // Handle both direct content and serialized kwargs content
+                                const content = chunk ? (chunk.content || (chunk.kwargs && chunk.kwargs.content)) : null;
+                                
+                                if (content) {
+                                    currentAiMessage += content;
                                     
                                     // Update Bubble
                                     const formatted = currentAiMessage

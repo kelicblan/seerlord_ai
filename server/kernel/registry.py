@@ -16,6 +16,7 @@ class PluginRegistry:
     """
     _instance = None
     _plugins: Dict[str, AgentPlugin] = {}
+    _plugin_dirs: Dict[str, str] = {} # Map plugin ID to directory name
     _loaded_modules: set = set()
 
     def __new__(cls):
@@ -51,8 +52,8 @@ class PluginRegistry:
         base_package = settings.PLUGIN_DIR.replace("/", ".").replace("\\", ".")
         
         for item in plugin_path.iterdir():
-            # 忽略以 _ 开头的目录（例如 _example_agent 或 __pycache__）
-            if item.is_dir() and not item.name.startswith("_"):
+            # 忽略 __pycache__，但允许 _ 开头的插件目录（如 _example_agent 或 _system_agent_）
+            if item.is_dir() and item.name != "__pycache__":
                 plugin_pkg_name = item.name
                 
                 # 尝试加载模块
@@ -69,7 +70,7 @@ class PluginRegistry:
                     try:
                         logger.debug(f"尝试加载模块: {module_name}")
                         module = importlib.import_module(module_name)
-                        if self._register_plugins_from_module(module):
+                        if self._register_plugins_from_module(module, plugin_pkg_name):
                             self._loaded_modules.add(module_name)
                             loaded = True
                             # 如果在包级别找到了，就不需要再找 plugin.py 了，或者继续找以防万一
@@ -82,7 +83,7 @@ class PluginRegistry:
                     except Exception as e:
                         logger.exception(f"加载模块 {module_name} 时发生意外错误: {e}")
 
-    def _register_plugins_from_module(self, module) -> bool:
+    def _register_plugins_from_module(self, module, plugin_dir_name: str) -> bool:
         """
         从模块中查找并注册 AgentPlugin 的子类。
         返回是否发现了插件。
@@ -97,13 +98,13 @@ class PluginRegistry:
                     # 检查是否已经注册过该类型的实例（可选，取决于是否允许同一类多实例）
                     # 这里我们简单地每次实例化并注册，依赖 register 方法的覆盖逻辑
                     plugin_instance = obj()
-                    self.register(plugin_instance)
+                    self.register(plugin_instance, plugin_dir_name)
                     found = True
                 except Exception as e:
                     logger.exception(f"实例化插件类 {name} 失败: {e}")
         return found
 
-    def register(self, plugin: AgentPlugin):
+    def register(self, plugin: AgentPlugin, dir_name: str = None):
         """
         注册单个插件实例。
         """
@@ -111,11 +112,18 @@ class PluginRegistry:
             logger.warning(f"插件 {plugin.name} 已存在，将被覆盖。")
         
         self._plugins[plugin.name] = plugin
+        if dir_name:
+            self._plugin_dirs[plugin.name] = dir_name
+            
         logger.success(f"已注册插件: {plugin.name} ({plugin.description})")
 
     def get_plugin(self, name: str) -> AgentPlugin:
         """根据名称获取插件"""
         return self._plugins.get(name)
+
+    def get_plugin_dir(self, name: str) -> str:
+        """根据插件名称获取对应的目录名"""
+        return self._plugin_dirs.get(name)
 
 # 创建全局单例实例
 registry = PluginRegistry()

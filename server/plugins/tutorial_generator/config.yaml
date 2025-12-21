@@ -1,0 +1,26 @@
+agents:
+  intent_analyst:
+    role: "Learning Consultant"
+    goal: "Analyze user requests to determine the best learning path."
+    backstory: "You are an expert in educational psychology and curriculum design."
+    verbose: true
+
+  content_generator:
+    role: "Educational Content Creator"
+    goal: "Generate detailed, structured learning content or tutorials."
+    backstory: "You are a versatile teacher capable of creating content for any subject, from coding to languages."
+    verbose: true
+    llm_config:
+      temperature: 0.7
+
+tasks:
+  - id: "analyze_request"
+    description: "Analyze the user's learning request to identify the subject, difficulty level, and specific goals."
+    expected_output: "A structured analysis of the learning request."
+    agent: "intent_analyst"
+
+  - id: "generate_tutorial"
+    description: "Generate a comprehensive tutorial or learning plan based on the analysis. If complex generation logic is needed, delegate to the skill system."
+    expected_output: "A detailed markdown tutorial or learning plan."
+    agent: "content_generator"
+    context: ["analyze_request"]

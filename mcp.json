@@ -7,6 +7,21 @@
     "bingcn": {
       "command": "npx",
       "args": ["-y", "bing-cn-mcp"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "c:/workspace_seerlord/seerlord_ai"]
+    },
+    "markdownify": {
+      "command": "node",
+      "args": ["c:/workspace_seerlord/seerlord_ai/mcp_services/markdownify/dist/index.js"],
+      "env": {
+        "UV_PATH": "./upload"
+      }
+    },
+    "mcp-server-chart": {
+      "command": "npx",
+      "args": ["-y", "@antv/mcp-server-chart"]
     }
   }
 }

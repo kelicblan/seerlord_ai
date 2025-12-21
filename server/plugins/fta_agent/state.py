@@ -15,6 +15,10 @@ class FTANode(BaseModel):
 class FTAState(TypedDict):
     """FTA 分析的状态"""
     messages: Annotated[List[BaseMessage], add_messages]
+    # Context
+    tenant_id: str
+    user_id: str
+    
     tree_nodes: List[FTANode]
     processing_queue: List[str] # 待分析的节点 ID 列表
     completed: bool

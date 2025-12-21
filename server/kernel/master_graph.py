@@ -45,6 +45,8 @@ class MasterState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], add_messages]
     # Context State
     session_id: str
+    tenant_id: str
+    user_id: str
     agent_name: str
     # Planning State
     plan: Optional[MasterPlan]
@@ -61,6 +63,8 @@ class MasterState(TypedDict, total=False):
     # Skill State
     active_skill: str           # Name of the currently active skill
     skill_args: Dict[str, Any]  # Arguments for the skill
+    # Language Preference
+    language: str               # Language code (e.g. 'zh-CN', 'en')
 
 # =============================================================================
 # Helper Functions
@@ -124,6 +128,10 @@ async def skill_router_node(state: MasterState) -> Dict[str, Any]:
     """
     Analyzes user input to see if it matches a specific skill.
     """
+    # [手动模式覆盖] 如果指定了 target_plugin，跳过技能路由直接进入规划器
+    if state.get("target_plugin") and state.get("target_plugin") != "auto":
+        return {"active_skill": None}
+
     messages = sanitize_messages(state.get("messages", []))
     last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
     if not last_user_msg:
@@ -303,10 +311,31 @@ async def planner_node(state: MasterState, config: RunnableConfig) -> Dict[str, 
     last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
     user_input = last_user_msg.content if last_user_msg else ""
     
+    # [手动模式覆盖] 检查是否强制指定了插件
+    target_plugin = state.get("target_plugin")
+    if target_plugin and target_plugin != "auto" and target_plugin in registry.plugins:
+        logger.info(f"手动模式生效: 直接路由至 {target_plugin}")
+        return {
+             "plan": MasterPlan(
+                 tasks=[Task(id=1, plugin_name=target_plugin, instruction=user_input, description="手动选择模式")], 
+                 original_request=user_input
+             ),
+             "current_step_index": 0,
+             "results": {},
+             "session_id": session_id,
+             "agent_name": agent_name
+         }
+
     # Retrieve Relevant Memories
     memories = []
     if memory_manager.enabled and user_input:
-        memories = await memory_manager.retrieve_relevant(user_input, agent_name=agent_name, k=3)
+        memories = await memory_manager.retrieve_relevant(
+            query=user_input,
+            tenant_id=state.get("tenant_id", "default_tenant"),
+            user_id=state.get("user_id"),
+            agent_name=agent_name,
+            k=3
+        )
     
     memory_context = ""
     if memories:
@@ -334,9 +363,19 @@ async def planner_node(state: MasterState, config: RunnableConfig) -> Dict[str, 
     if is_replanning and feedback_history:
         replan_context = f"\n\n[ATTENTION] Previous Plan Failed! Feedback: {feedback_history[-1]}\nPlease create a NEW plan to address the failure."
 
+    language = state.get("language", "zh-CN")
+    lang_instruction = ""
+    if language == "en":
+        lang_instruction = "IMPORTANT: Please generate the plan and instructions in English."
+    elif language == "zh-TW":
+        lang_instruction = "IMPORTANT: Please generate the plan and instructions in Traditional Chinese (繁体中文)."
+    else:
+        lang_instruction = "IMPORTANT: Please generate the plan and instructions in Simplified Chinese (简体中文)."
+
     system_prompt = (
         "You are a Senior Planner for an AI system.\n"
         "Your goal is to break down the user's request into a sequence of executable tasks.\n"
+        f"{lang_instruction}\n"
         f"{memory_context}\n"
         f"Available Plugins:\n{plugin_desc}\n"
         "- chitchat: Use this for general conversation, greetings, or when no other plugin is suitable.\n\n"
@@ -382,20 +421,35 @@ async def dispatcher_node(state: MasterState) -> Dict[str, Any]:
         return {"target_plugin": "final_answer"}
     
     current_task = plan.tasks[idx]
-    logger.info(f"Dispatching Task {current_task.id}: {current_task.description} -> {current_task.plugin_name}")
+    # 防御性处理：LLM 生成的 plan 可能包含不存在的插件名，避免进入无限循环
+    plugin_name = current_task.plugin_name
+    if plugin_name not in registry.plugins and plugin_name != "chitchat":
+        logger.warning(f"计划中包含未知插件：{plugin_name}，已降级为 chitchat（task_id={current_task.id}）")
+        plugin_name = "chitchat"
+
+    logger.info(f"Dispatching Task {current_task.id}: {current_task.description} -> {plugin_name}")
     
     # We need to pass the instruction to the plugin.
     # We can inject a SystemMessage or HumanMessage.
     # To avoid polluting the conversation history too much for the user, 
     # we might want to be careful. But plugins rely on 'messages'.
     
-    instruction_msg = SystemMessage(content=f"[System Instruction] Execute Task: {current_task.instruction}")
+    language = state.get("language", "zh-CN")
+    lang_hint = ""
+    if language == "en":
+        lang_hint = " (Respond in English)"
+    elif language == "zh-TW":
+        lang_hint = " (Respond in Traditional Chinese/繁体中文)"
+    else:
+        lang_hint = " (Respond in Simplified Chinese/简体中文)"
+
+    instruction_msg = SystemMessage(content=f"[System Instruction] Execute Task: {current_task.instruction}{lang_hint}")
     
     return {
-        "target_plugin": current_task.plugin_name,
+        "target_plugin": plugin_name,
         "next_instruction": current_task.instruction,
         "messages": [instruction_msg], # Append instruction
-        "agent_name": current_task.plugin_name, # Update agent identity to match current plugin
+        "agent_name": plugin_name, # Update agent identity to match current plugin
     }
 
 async def chitchat_node(state: MasterState) -> Dict[str, Any]:
@@ -403,8 +457,20 @@ async def chitchat_node(state: MasterState) -> Dict[str, Any]:
     A simple node for general conversation when no plugin is needed.
     """
     llm = get_router_llm()
+    
+    language = state.get("language", "zh-CN")
+    system_msg = ""
+    if language == "en":
+        system_msg = "respond in English."
+    elif language == "zh-TW":
+        system_msg = "respond in Traditional Chinese (繁体中文)."
+    else:
+        system_msg = "respond in Simplified Chinese (简体中文)."
+
+    messages = [SystemMessage(content=system_msg)] + state["messages"]
+    
     # Use context to reply
-    response = await llm.ainvoke(state["messages"])
+    response = await llm.ainvoke(messages)
     return {"messages": [response]}
 
 async def final_answer_node(state: MasterState) -> Dict[str, Any]:
@@ -439,7 +505,9 @@ async def final_answer_node(state: MasterState) -> Dict[str, Any]:
             await memory_manager.save_experience(
                 content=content_to_save,
                 agent_name=agent_name,
-                session_id=session_id
+                session_id=session_id,
+                tenant_id=state.get("tenant_id", "default_tenant"),
+                user_id=state.get("user_id")
             )
 
     return {} # No changes
@@ -520,8 +588,13 @@ def route_approval(state: MasterState):
     if len(plan.tasks) == 1 and plan.tasks[0].plugin_name == "chitchat":
         return "dispatcher"
         
+    # [Auto-Approval Override]
+    # For now, we assume the user wants full automation as per instructions.
+    # In a production system, this should be configurable via settings.AUTO_APPROVE
+    return "dispatcher"
+    
     # Otherwise, go to approval node (which will interrupt)
-    return "human_approval"
+    # return "human_approval"
 
 def route_skill(state: MasterState):
     """

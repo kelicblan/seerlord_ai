@@ -10,6 +10,10 @@ from loguru import logger
 # Define State
 class NewsState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
+    # Context
+    tenant_id: str
+    user_id: str
+    
     news_content: str
     critique_count: int
     latest_summary: str

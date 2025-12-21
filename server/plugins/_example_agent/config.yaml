@@ -1,0 +1,49 @@
+agents:
+  research_planner:
+    role: "Research Planner"
+    goal: "Create comprehensive research plans based on user topics."
+    backstory: "You are an expert strategist who breaks down complex topics into actionable research steps."
+    verbose: true
+
+  researcher:
+    role: "Senior Researcher"
+    goal: "Execute research plans by gathering accurate information from the web."
+    backstory: "You are a meticulous researcher who verifies facts and gathers data from multiple sources."
+    verbose: true
+    tools: ["bing_search", "search_global_news"]
+
+  report_writer:
+    role: "Technical Writer"
+    goal: "Synthesize research findings into a clear, comprehensive report."
+    backstory: "You are a skilled writer capable of turning raw data into polished, professional reports."
+    verbose: true
+
+  critic:
+    role: "Reviewer"
+    goal: "Critique reports for accuracy, clarity, and completeness."
+    backstory: "You are a harsh but fair critic who ensures only high-quality work is delivered."
+    verbose: true
+
+tasks:
+  - id: "plan_research"
+    description: "Analyze the user's request and create a detailed research plan with specific questions to investigate."
+    expected_output: "A numbered list of research tasks."
+    agent: "research_planner"
+
+  - id: "execute_research"
+    description: "Follow the research plan and gather information for each point. Use search tools if necessary."
+    expected_output: "A compilation of findings for each research task."
+    agent: "researcher"
+    context: ["plan_research"]
+
+  - id: "write_report"
+    description: "Write a comprehensive report based on the gathered findings. Include an executive summary and detailed sections."
+    expected_output: "A full markdown report."
+    agent: "report_writer"
+    context: ["execute_research"]
+
+  - id: "critique_report"
+    description: "Review the report. Provide a score (1-10) and specific feedback on how it can be improved."
+    expected_output: "Critique feedback and score."
+    agent: "critic"
+    context: ["write_report"]
