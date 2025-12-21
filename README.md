@@ -82,13 +82,16 @@ graph TD
 
 - **Language**: Python 3.11+
 - **Frameworks**: FastAPI, LangChain, LangGraph
-- **Database**: PostgreSQL (AsyncPG)
+- **Database**: PostgreSQL (optional; for persistence/checkpoints)
+- **Vector Store**: Qdrant (optional; for memory & skill retrieval)
 - **Utilities**: Pydantic, Loguru, SSE-Starlette
+- **Admin Console**: Vue 3 + Vite + TypeScript (in `admin/`)
 
 ## 📂 Directory Structure
 
 ```
 seerlord_ai/
+├── admin/              # Vue3 admin console (optional)
 ├── server/
 │   ├── core/           # Core configuration & LLM wrappers
 │   ├── kernel/         # Micro-kernel implementation (Registry, MCP Manager, Memory Manager)
@@ -97,6 +100,7 @@ seerlord_ai/
 │   └── main.py         # Application entry point
 ├── mcp_services/       # MCP service implementations
 ├── scripts/            # Utility scripts
+├── mcp.json            # MCP server configuration (loaded on startup if present)
 └── pyproject.toml      # Project dependencies configuration
 ```
 
@@ -105,7 +109,9 @@ seerlord_ai/
 ### Prerequisites
 
 - Python 3.11 or higher
-- PostgreSQL Database
+- Node.js 18+ (optional; for `admin/` and some MCP servers)
+- PostgreSQL (optional; checkpoints & skill metadata)
+- Qdrant (optional; vector memory & skill retrieval)
 
 ### Installation
 
@@ -122,15 +128,51 @@ Copy the example environment variable file and modify the configuration:
 
 ```bash
 cp .env.example .env
-# Edit the .env file to configure your OpenAI API Key and database connection details
+# Edit the .env file to configure your LLM provider and (optional) DB/Qdrant
 ```
+
+Key notes:
+- `LLM_PROVIDER` supports `openai` and `ollama` (OpenAI-compatible `/v1` endpoints are supported).
+- If you do not configure DB, LangGraph will fall back to in-memory checkpoints.
+- If you do not configure Qdrant, memory & vector-based skill retrieval will be disabled.
+- The API enforces `X-API-Key` (tenant key) on most `/api/*` and `/agent` routes; for local dev you can use `sk-admin-test` (see `server/api/auth.py`).
 
 ### Start the Service
 
 ```bash
 # Start the backend service
-python server/main.py
+python run.py
 ```
+
+Alternative:
+```bash
+python -m server.main
+```
+
+### Health Check
+
+- `GET http://localhost:8000/health`
+- API docs: `http://localhost:8000/docs`
+
+### First-Boot Admin User (Optional)
+
+If you want to create the very first admin user (only works when the user table is empty):
+
+1. Set `SETUP_TOKEN` in `.env`
+2. Call:
+   - `POST http://localhost:8000/api/v1/setup/initialize`
+   - Header: `X-Setup-Token: <SETUP_TOKEN>`
+   - Body: `{"username":"admin","password":"change_me_please"}`
+
+### Admin Console (Optional)
+
+```bash
+cd admin
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL` (and optionally `VITE_TENANT_API_KEY`) to point to your backend.
 
 ## 📄 License
 

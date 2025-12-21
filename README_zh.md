@@ -82,13 +82,16 @@ graph TD
 
 - **语言**: Python 3.11+
 - **框架**: FastAPI, LangChain, LangGraph
-- **数据库**: PostgreSQL (AsyncPG)
+- **数据库**: PostgreSQL（可选；用于持久化/Checkpoint）
+- **向量库**: Qdrant（可选；用于记忆与技能检索）
 - **工具库**: Pydantic, Loguru, SSE-Starlette
+- **管理台**: Vue 3 + Vite + TypeScript（位于 `admin/`）
 
 ## 📂 目录结构
 
 ```
 seerlord_ai/
+├── admin/              # Vue3 管理台（可选）
 ├── server/
 │   ├── core/           # 核心配置与 LLM 封装
 │   ├── kernel/         # 微内核实现 (注册表, MCP 管理, 记忆管理)
@@ -97,6 +100,7 @@ seerlord_ai/
 │   └── main.py         # 应用入口
 ├── mcp_services/       # MCP 服务实现
 ├── scripts/            # 实用脚本
+├── mcp.json            # MCP 服务配置（启动时如存在会自动加载）
 └── pyproject.toml      # 项目依赖配置
 ```
 
@@ -105,7 +109,9 @@ seerlord_ai/
 ### 前置要求
 
 - Python 3.11 或更高版本
-- PostgreSQL 数据库
+- Node.js 18+（可选；用于 `admin/` 与部分 MCP 服务）
+- PostgreSQL（可选；用于 Checkpoint 与技能元数据）
+- Qdrant（可选；用于向量记忆与技能检索）
 
 ### 安装依赖
 
@@ -122,15 +128,51 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，配置 OpenAI API Key 和数据库连接信息
+# 编辑 .env 文件，配置 LLM Provider 与（可选）数据库/Qdrant
 ```
+
+关键说明：
+- `LLM_PROVIDER` 支持 `openai` 与 `ollama`（兼容 OpenAI `/v1` 协议的服务也可用）。
+- 未配置数据库时，LangGraph 会回退到内存 Checkpoint（重启后状态丢失）。
+- 未配置 Qdrant 时，向量记忆与基于向量的技能检索会被禁用。
+- 大部分 `/api/*` 与 `/agent` 路由需要携带租户头 `X-API-Key`；本地开发可用 `sk-admin-test`（见 `server/api/auth.py`）。
 
 ### 启动服务
 
 ```bash
 # 启动后端服务
-python server/main.py
+python run.py
 ```
+
+或：
+```bash
+python -m server.main
+```
+
+### 健康检查
+
+- `GET http://localhost:8000/health`
+- API 文档：`http://localhost:8000/docs`
+
+### 首启初始化管理员（可选）
+
+用于创建第一个管理员账号（仅当用户表为空时允许执行一次）：
+
+1. 在 `.env` 中设置 `SETUP_TOKEN`
+2. 调用：
+   - `POST http://localhost:8000/api/v1/setup/initialize`
+   - Header：`X-Setup-Token: <SETUP_TOKEN>`
+   - Body：`{"username":"admin","password":"change_me_please"}`
+
+### 启动管理台（可选）
+
+```bash
+cd admin
+npm install
+npm run dev
+```
+
+可通过 `VITE_API_URL`（以及可选的 `VITE_TENANT_API_KEY`）指向后端地址。
 
 ## 📄 开源协议
 
