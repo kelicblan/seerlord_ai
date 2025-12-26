@@ -67,3 +67,7 @@ logs/
 .svn/
 readme.txt
 Arch_Docs/
+
+Temp_Files/
+test_image_gen.png
+.trae/

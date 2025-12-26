@@ -2,7 +2,7 @@
 
 ## Tech Stack Definition
 - **Backend**: Python 3.10+, FastAPI (implied), LangChain, LangGraph.
-- **Frontend**: Vue 3 (Composition API), Vite, markstream-vue(markstream插件，https://www.ai-elements-vue.com),shadcn-vue(ui组件,https://www.shadcn-vue.com), TypeScript.
+- **Frontend**: Vue 3 (Composition API), Vite, markstream-vue(markstream插件，https://www.ai-elements-vue.com),Element Plus(ui组件,https://element-plus.org), TypeScript.
 - **Data Exchange**: REST API, Streaming (SSE/Events).
 
 ## 1. Backend Rules (Python & LangGraph)
@@ -14,10 +14,11 @@
   - Use `astream_events` for real-time feedback.
 - **Logging**: Use structured logging (e.g., `loguru`). No `print()`.
 
-## 2. Frontend Rules (Vue 3 + shadcn-vue)
+## 2. Frontend Rules (Vue 3 + Element Plus)
 - **Script Setup**: MUST use `<script setup lang="ts">`. NO Options API.
-- **shadcn-vue**: 
+- **Element Plus**: 
   - Use auto-import for components.
+  - Use `ElMessage` for notifications.
 - **State Management**: Use specific `composables` (e.g., `useAgent.ts`) for business logic. Keep UI dumb.
 - **Markdown**: Use a streaming-compatible markdown renderer for agent responses.
 

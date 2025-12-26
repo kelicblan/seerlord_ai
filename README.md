@@ -29,7 +29,29 @@ As an **enterprise-grade AI Agent orchestration platform**, SeerLord AI adopts a
 - **Plugin System**: All business capabilities (such as news reporting, tutorial generation, financial analysis, etc.) are implemented via plugins, enabling plug-and-play functionality.
 - **Agent Orchestration (LangGraph)**: Utilizes LangGraph to build complex stateful multi-agent workflows.
 - **MCP Support**: Integrates the Model Context Protocol (MCP) for standardized context and tool interactions.
+- **Dual-Engine Knowledge System**: Combines standard **RAG** (Vector-based with Qdrant) for efficient document retrieval and advanced **GraphRAG** (Graph-based with Neo4j) for deep entity relationship reasoning and hybrid search.
 - **High-Performance Backend**: An asynchronous backend built with FastAPI, supporting SSE streaming responses.
+
+## 🔌 Built-in Ecosystem
+
+### Plugins (Agents)
+SeerLord comes with a rich set of built-in plugins in `server/plugins/`:
+- **Comic Book Generator**: Automatically generate comic strips from stories.
+- **Data Analyst**: Analyze data and generate reports.
+- **Deep Research**: Conduct in-depth research on complex topics.
+- **Document Translator**: Translate documents while preserving formatting.
+- **FTA Agent**: Fault Tree Analysis for system reliability engineering.
+- **General Chat**: Standard conversational agent.
+- **Novel Generator**: Assist in writing novels and creative stories.
+- **Podcaster**: Generate podcast scripts and audio content.
+- **PPT Generator**: Create presentation slides automatically.
+- **Reasoning Engine**: Advanced reasoning capabilities for complex problems.
+
+### MCP Services
+Integrated MCP services in `mcp_services/` for extended capabilities:
+- **Markdownify**: Convert web content to clean Markdown.
+- **MDToFiles**: Split Markdown files into multiple files.
+- **News**: Fetch and process real-time news updates.
 
 ## 🏗️ Architecture Flow
 
@@ -83,7 +105,8 @@ graph TD
 - **Language**: Python 3.11+
 - **Frameworks**: FastAPI, LangChain, LangGraph
 - **Database**: PostgreSQL (optional; for persistence/checkpoints)
-- **Vector Store**: Qdrant (optional; for memory & skill retrieval)
+- **Vector Store**: Qdrant (optional; for memory & skill retrieval & RAG)
+- **Graph Database**: Neo4j (optional; for Knowledge Graph & GraphRAG)
 - **Utilities**: Pydantic, Loguru, SSE-Starlette
 - **Admin Console**: Vue 3 + Vite + TypeScript (in `admin/`)
 
@@ -95,6 +118,8 @@ seerlord_ai/
 ├── server/
 │   ├── core/           # Core configuration & LLM wrappers
 │   ├── kernel/         # Micro-kernel implementation (Registry, MCP Manager, Memory Manager)
+│   ├── rag/            # RAG implementation (Qdrant-based document retrieval)
+│   ├── ske/            # SeerLord Knowledge Engine (Neo4j-based GraphRAG)
 │   ├── plugins/        # Plugins directory (contains various Agent implementations)
 │   ├── skills/         # Skills directory (Fast Track atomic capabilities)
 │   └── main.py         # Application entry point
@@ -112,6 +137,7 @@ seerlord_ai/
 - Node.js 18+ (optional; for `admin/` and some MCP servers)
 - PostgreSQL (optional; checkpoints & skill metadata)
 - Qdrant (optional; vector memory & skill retrieval)
+- Neo4j (optional; Knowledge Graph & GraphRAG)
 
 ### Installation
 
@@ -135,6 +161,7 @@ Key notes:
 - `LLM_PROVIDER` supports `openai` and `ollama` (OpenAI-compatible `/v1` endpoints are supported).
 - If you do not configure DB, LangGraph will fall back to in-memory checkpoints.
 - If you do not configure Qdrant, memory & vector-based skill retrieval will be disabled.
+- If you do not configure Neo4j, Knowledge Graph & GraphRAG features will be unavailable.
 - The API enforces `X-API-Key` (tenant key) on most `/api/*` and `/agent` routes; for local dev you can use `sk-admin-test` (see `server/api/auth.py`).
 
 ### Start the Service

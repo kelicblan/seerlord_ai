@@ -14,6 +14,7 @@ class ExampleState(TypedDict):
     # Context
     tenant_id: str
     user_id: str
+    memory_context: str
     
     # Inputs
     user_topic: str
@@ -31,3 +32,6 @@ class ExampleState(TypedDict):
     
     # Output
     final_report: str
+    
+    # Metrics
+    total_tokens: int

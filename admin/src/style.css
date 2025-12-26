@@ -90,7 +90,13 @@
     font-size: 12px;
   }
 }
-
+.main-bg{
+  background-color: #003153 !important;
+  color: #fff !important;
+}
+:deep(bg-primary) {
+  background-color: #003153 !important;
+}
 /* Mermaid Graph Node Highlights */
 .node-running rect, .node-running circle, .node-running polygon {
   fill: #fcd34d !important; /* amber-300 */

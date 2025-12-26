@@ -2,6 +2,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from server.core.config import settings
 import sys
+import asyncio
+from sqlalchemy.exc import DBAPIError
+from loguru import logger
 
 # Construct Async Database URL (driver: postgresql+asyncpg)
 # If no DATABASE_URL is provided, we might fail or fallback.
@@ -38,5 +41,25 @@ SessionLocal = async_sessionmaker(
 Base = declarative_base()
 
 async def get_db():
-    async with SessionLocal() as session:
+    session: AsyncSession = SessionLocal()
+    try:
         yield session
+    except Exception:
+        try:
+            await session.rollback()
+        except Exception as e:
+            logger.warning(f"DB rollback failed: {e}")
+        raise
+    finally:
+        try:
+            await session.close()
+        except asyncio.CancelledError:
+            try:
+                await asyncio.shield(session.close())
+            except Exception:
+                pass
+            raise
+        except DBAPIError as e:
+            logger.warning(f"DB session close failed: {e}")
+        except Exception as e:
+            logger.warning(f"DB session close failed: {e}")

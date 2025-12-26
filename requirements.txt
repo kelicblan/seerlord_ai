@@ -2,6 +2,7 @@ fastapi
 uvicorn
 langserve
 langchain
+langchain-text-splitters
 langchain-openai
 langchain-ollama
 langgraph
@@ -13,9 +14,11 @@ asyncpg
 psycopg_pool
 tenacity
 mcp
+markitdown[docx]>=0.0.1a3
+python-docx
 python-dotenv
 zstandard
-qdrant-client
+qdrant-client==1.12.2
 sqlalchemy
 greenlet
 duckduckgo-search
@@ -23,3 +26,7 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 passlib[bcrypt]
+neo4j
+llama-index
+llama-index-embeddings-langchain
+llama-index-llms-openai-like

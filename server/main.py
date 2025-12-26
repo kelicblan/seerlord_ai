@@ -14,7 +14,7 @@ if sys.platform == 'win32':
 
 from contextlib import asynccontextmanager
 from typing import Dict, Any
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,10 +34,11 @@ from server.core.config import settings
 from server.kernel.registry import registry
 from server.kernel.master_graph import build_master_graph
 from server.kernel.mcp_manager import mcp_manager
-from server.kernel.memory_manager import memory_manager
+from server.memory.manager import MemoryManager
 from server.api.auth import TenantMiddleware
-from server.api.v1 import paas_agent, agent, login, users, skills
+from server.api.v1 import paas_agent, agent, login, users, skills, tools, files, knowledge, artifact, api_keys, settings as settings_api
 from server.core.database import engine, Base, SessionLocal
+from anyio import to_thread
 
 # -----------------------------------------------------------------------------
 # Global Resources
@@ -124,12 +125,12 @@ async def lifespan(app: FastAPI):
     
     # 2. Initialize Memory Manager (Qdrant)
     logger.info("Initializing Memory Manager (Qdrant)...")
-    await memory_manager.initialize()
+    await MemoryManager.get_instance()
 
     # 3. Initialize MCP Manager
     # MCP 配置文件默认在项目根目录，避免工作目录变化导致找不到配置
     repo_root = Path(__file__).resolve().parents[1]
-    mcp_config_path = repo_root / "mcp.json"
+    mcp_config_path = repo_root / "server/mcp.json"
     if mcp_config_path.exists():
         logger.info(f"Initializing MCP Manager from {mcp_config_path}...")
         await mcp_manager.load_config(str(mcp_config_path))
@@ -140,6 +141,21 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing User Database...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    logger.info("Initializing Sync SQLAlchemy Database...")
+    try:
+        from server.db.session import engine as sync_engine
+        from server.db.session import Base as SyncBase
+
+        def _init_sync_tables() -> None:
+            import server.db.models
+
+            SyncBase.metadata.create_all(bind=sync_engine)
+
+        await to_thread.run_sync(_init_sync_tables)
+    except Exception as e:
+        logger.error(f"Failed to initialize Sync SQLAlchemy tables: {e}")
+        logger.warning("Sync SQLAlchemy tables are not initialized. Related APIs may fail.")
 
     yield
     
@@ -195,7 +211,7 @@ async def get_plugins():
         })
     return plugins
 
-@app.get("/api/v1/mcp/status")
+@app.get("/api/v1/mcp/status", dependencies=[Depends(login.get_current_user)])
 async def get_mcp_status():
     """Get status of MCP servers and tools"""
     # Use the manager's summary method which has accurate tool counts
@@ -222,6 +238,16 @@ app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 app.include_router(login.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(skills.router, prefix="/api/v1/skills", tags=["Skills"])
+app.include_router(tools.router, prefix="/api/v1", tags=["Tools"])
+app.include_router(files.router, prefix="/api/v1", tags=["Files"])
+app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["Knowledge"])
+app.include_router(artifact.router, prefix="/api/v1/artifact", tags=["Artifact"])
+app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["API Keys"])
+app.include_router(settings_api.router, prefix="/api/v1/settings", tags=["Settings"])
+
+# SKE Router
+from server.ske.router import router as ske_router
+app.include_router(ske_router, prefix="/api/v1/ske", tags=["SKE"])
 
 # LangServe Routes (Legacy/Direct Graph Access)
 add_routes(
@@ -235,8 +261,10 @@ async def health_check():
     return {"status": "ok", "version": "1.0.0"}
 
 # Static Files (Frontend)
-if os.path.exists("server/static"):
-    app.mount("/", StaticFiles(directory="server/static", html=True), name="static")
+static_root = (Path(__file__).resolve().parents[1] / "server" / "static").resolve()
+if static_root.exists():
+    app.mount("/static", StaticFiles(directory=str(static_root)), name="static_files")
+    app.mount("/", StaticFiles(directory=str(static_root), html=True), name="static")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

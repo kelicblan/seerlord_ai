@@ -68,7 +68,7 @@ class DynamicSkillManager:
                     logger.info(f"🧬 Evolution Complete! Created new skill: {new_skill.name} ({new_skill.level})")
                     
                     # 3. Persist the new skill!
-                    await self.skill_manager.add_skill(new_skill, tenant_id=tenant_id, user_id=user_id, agent_name=agent_name)
+                    await self.skill_manager.add_skill(new_skill, tenant_id=tenant_id, user_id=user_id)
                     
                     await adispatch_custom_event(
                         "skill_evolved",

@@ -2,12 +2,24 @@ from typing import Dict, Any, Literal
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from server.core.llm import get_llm
-from server.kernel.memory_manager import memory_manager
 from loguru import logger
+from server.memory.tools import memory_node
+import uuid
+from server.core.database import SessionLocal
+from server.models.artifact import AgentArtifact
 
 from .state import ExampleState
 from .schema import ResearchPlan, Reflection
 from .tools import search_web, calculate_metrics
+
+def _extract_tokens(response) -> int:
+    try:
+        if hasattr(response, "response_metadata"):
+            usage = response.response_metadata.get("token_usage", {})
+            return usage.get("total_tokens", 0)
+    except Exception:
+        pass
+    return 0
 
 # =============================================================================
 # Node Definitions
@@ -16,7 +28,6 @@ from .tools import search_web, calculate_metrics
 async def init_node(state: ExampleState):
     """
     1. Extract user topic.
-    2. Retrieve relevant memory.
     """
     messages = state["messages"]
     
@@ -41,29 +52,14 @@ async def init_node(state: ExampleState):
     if not topic and messages:
         topic = messages[-1].content
     
-    # Memory Retrieval (Demonstration)
-    memories = []
-    if memory_manager.enabled:
-        tenant_id = state.get("tenant_id", "default_tenant")
-        user_id = state.get("user_id")
-        memories = await memory_manager.retrieve_relevant(
-            query=topic, 
-            tenant_id=tenant_id, 
-            user_id=user_id,
-            k=2
-        )
-    
-    memory_context = ""
-    if memories:
-        memory_context = "\n[Memory Context]: " + "; ".join([m["content"] for m in memories])
-    
     # Store topic and initialize fields
     return {
-        "user_topic": topic + memory_context,
+        "user_topic": topic,
         "collected_info": [],
         "critique_count": 0,
         "current_task_index": 0,
-        "feedback_history": external_feedback
+        "feedback_history": external_feedback,
+        "total_tokens": 0
     }
 
 async def local_planner_node(state: ExampleState):
@@ -72,16 +68,23 @@ async def local_planner_node(state: ExampleState):
     """
     topic = state.get("user_topic", "")
     feedback = state.get("feedback_history", [])
+    memory_context = state.get("memory_context", "")
     
     llm = get_llm().with_structured_output(ResearchPlan)
     
     prompt = f"Create a research plan for: {topic}.\n"
+    if memory_context:
+        prompt += f"\n{memory_context}\n"
+        
     if feedback:
         prompt += f"Previous feedback: {feedback[-1]}\nAdjust plan accordingly."
         
     plan = await llm.ainvoke([SystemMessage(content=prompt)])
     
-    return {"local_plan": plan, "current_task_index": 0}
+    tokens = _extract_tokens(plan)
+    current_tokens = state.get("total_tokens", 0)
+    
+    return {"local_plan": plan, "current_task_index": 0, "total_tokens": current_tokens + tokens}
 
 async def executor_node(state: ExampleState):
     """
@@ -97,6 +100,7 @@ async def executor_node(state: ExampleState):
     logger.info(f"Executing task {task.id}: {task.action} - {task.query}")
     
     result = ""
+    tokens = 0
     if task.action == "search":
         result = await search_web(task.query)
     elif task.action == "calculate":
@@ -105,16 +109,19 @@ async def executor_node(state: ExampleState):
     else:
         # Default 'read' or 'summarize' just using LLM
         llm = get_llm()
-        result = await llm.ainvoke([HumanMessage(content=f"Perform task: {task.action} on {task.query}")])
-        result = result.content
+        response = await llm.ainvoke([HumanMessage(content=f"Perform task: {task.action} on {task.query}")])
+        result = response.content
+        tokens = _extract_tokens(response)
         
     # Append info
     new_info = f"[Task {task.id}] {result}"
     current_info = state.get("collected_info", [])
+    current_tokens = state.get("total_tokens", 0)
     
     return {
         "collected_info": current_info + [new_info],
-        "current_task_index": idx + 1
+        "current_task_index": idx + 1,
+        "total_tokens": current_tokens + tokens
     }
 
 async def reporter_node(state: ExampleState):
@@ -133,7 +140,10 @@ async def reporter_node(state: ExampleState):
     
     response = await llm.ainvoke([SystemMessage(content=prompt)])
     
-    return {"final_report": response.content}
+    tokens = _extract_tokens(response)
+    current_tokens = state.get("total_tokens", 0)
+    
+    return {"final_report": response.content, "total_tokens": current_tokens + tokens}
 
 async def critic_node(state: ExampleState):
     """
@@ -152,20 +162,43 @@ async def critic_node(state: ExampleState):
     
     reflection = await llm.ainvoke([SystemMessage(content=prompt)])
     
+    tokens = _extract_tokens(reflection)
+    current_tokens = state.get("total_tokens", 0)
+    
     if not reflection.is_satisfactory:
         return {
             "feedback_history": state.get("feedback_history", []) + [reflection.feedback],
-            "critique_count": state.get("critique_count", 0) + 1
+            "critique_count": state.get("critique_count", 0) + 1,
+            "total_tokens": current_tokens + tokens
         }
     
-    return {"critique_count": 0} # Reset on success (though we end)
+    return {"critique_count": 0, "total_tokens": current_tokens + tokens} # Reset on success (though we end)
 
 async def final_output_node(state: ExampleState):
     """
     Output the final response to the user.
     """
-    report = state.get("final_report")
-    # Wrap in AIMessage for the Master Graph
+    report = state.get("final_report") or ""
+    if report:
+        try:
+            tenant_id = state.get("tenant_id")
+            user_id = state.get("user_id")
+            if tenant_id:
+                async with SessionLocal() as db:
+                    db.add(AgentArtifact(
+                        id=str(uuid.uuid4()),
+                        tenant_id=str(tenant_id),
+                        user_id=str(user_id) if user_id else None,
+                        agent_id="_example_agent",
+                        type="content",
+                        value=str(report),
+                        title=f"研究报告：{state.get('user_topic') or ''}",
+                        description="示例 agent 生成的研究报告内容",
+                        total_tokens=state.get("total_tokens", 0)
+                    ))
+                    await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to save content artifact: {e}")
     return {"messages": [AIMessage(content=report)]}
 
 # =============================================================================
@@ -203,6 +236,7 @@ def route_critique(state: ExampleState):
 
 workflow = StateGraph(ExampleState)
 
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("init", init_node)
 workflow.add_node("planner", local_planner_node)
 workflow.add_node("executor", executor_node)
@@ -210,7 +244,8 @@ workflow.add_node("reporter", reporter_node)
 workflow.add_node("critic", critic_node)
 workflow.add_node("final", final_output_node)
 
-workflow.set_entry_point("init")
+workflow.set_entry_point("memory_load")
+workflow.add_edge("memory_load", "init")
 
 workflow.add_edge("init", "planner")
 workflow.add_edge("planner", "executor")
@@ -237,4 +272,4 @@ workflow.add_conditional_edges(
 
 workflow.add_edge("final", END)
 
-graph = workflow.compile()
+app = workflow.compile()

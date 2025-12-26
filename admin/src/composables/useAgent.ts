@@ -1,5 +1,6 @@
 import { ref, reactive, watch } from 'vue'
 import api from '@/api/axios'
+import { fetchStream } from '@/api/fetchStream'
 import i18n from '@/i18n'
 
 export interface AgentPlugin {
@@ -64,20 +65,6 @@ export interface LLMContext {
 }
 
 export function useAgent() {
-  const envTenantApiKey = import.meta.env.VITE_TENANT_API_KEY || ''
-
-  const getTenantApiKey = () => {
-    const runtimeKey = localStorage.getItem('tenant_api_key') || sessionStorage.getItem('tenant_api_key') || ''
-    if (runtimeKey) return runtimeKey
-    if (envTenantApiKey) return envTenantApiKey
-    if (import.meta.env.DEV) return 'sk-admin-test'
-    return ''
-  }
-
-  const getAuthToken = () => {
-    return localStorage.getItem('token') || sessionStorage.getItem('token') || ''
-  }
-
   const plugins = ref<AgentPlugin[]>([])
   const selectedPlugin = ref<string>('')
   const messages = ref<Message[]>([{
@@ -98,6 +85,7 @@ export function useAgent() {
   const logs = ref<LogEntry[]>([])
   const graphData = ref<string>('')
   const nodeStatuses = ref<NodeStatus>({})
+  const streamedTokensByRunId = ref<Record<string, number>>({})
   const mcpStatus = ref<MCPStatus | null>(null)
   const llmContexts = ref<LLMContext[]>([])
   
@@ -247,6 +235,7 @@ export function useAgent() {
     metrics.outputTokens = 0
     logs.value = []
     nodeStatuses.value = {}
+    streamedTokensByRunId.value = {}
     llmContexts.value = []
   }
 
@@ -272,23 +261,14 @@ export function useAgent() {
     }, 100)
 
     // Estimate input tokens from user message (fallback)
-    const estimatedInputTokens = text.length
-    metrics.inputTokens += estimatedInputTokens
-    metrics.totalTokens += estimatedInputTokens
+    // const estimatedInputTokens = text.length
+    // metrics.inputTokens += estimatedInputTokens
+    // metrics.totalTokens += estimatedInputTokens
 
     try {
-      // Setup streaming request
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
-      const token = getAuthToken()
-      const tenantApiKey = getTenantApiKey()
-      if (token) headers.Authorization = `Bearer ${token}`
-      if (tenantApiKey) headers['X-API-Key'] = tenantApiKey
-
-      const response = await fetch('/api/v1/agent/stream_events', {
+      // Setup streaming request using unified fetchStream wrapper
+      const response = await fetchStream('/api/v1/agent/stream_events', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           input: {
             messages: [{ type: "human", content: text }],
@@ -408,6 +388,34 @@ export function useAgent() {
                   step.duration = Date.now() - step.startTime
                 }
 
+                const outMsgs = eventData.data?.output?.messages
+                if (Array.isArray(outMsgs)) {
+                  for (let i = outMsgs.length - 1; i >= 0; i--) {
+                    const m: any = outMsgs[i]
+                    const t = m?.type === 'constructor'
+                      ? (m?.kwargs?.type ?? m?.type)
+                      : (m?.type ?? m?.kwargs?.type)
+                    const c = m?.content ?? m?.kwargs?.content
+                    if (t === 'ai' && typeof c === 'string' && c) {
+                      const looksLikeDownloads =
+                        c.includes('/static/exports/') ||
+                        c.includes('点击下载') ||
+                        c.includes('需求分析完成') ||
+                        c.includes('项目需求规格说明书') ||
+                        c.includes('系统开发综合指导手册')
+
+                      if (looksLikeDownloads) {
+                        if (!currentMessage.content) {
+                          currentMessage.content = c
+                        } else if (!currentMessage.content.includes(c)) {
+                          currentMessage.content += `\n\n${c}`
+                        }
+                      }
+                      break
+                    }
+                  }
+                }
+
                 // Fallback: Capture output from task nodes if streaming didn't populate the message
                 // Only if this looks like a final output node and we haven't streamed content
                 if (eventData.data?.output?.results?.[eventName]) {
@@ -437,11 +445,28 @@ export function useAgent() {
                   
                   metrics.outputTokens += 1
                   metrics.totalTokens += 1
+                  
+                  if (runId) {
+                      streamedTokensByRunId.value[runId] = (streamedTokensByRunId.value[runId] || 0) + 1
+                  }
                 }
               }
               // --- 4. Model Metadata ---
               else if (eventType === 'on_chat_model_start') {
-                addLog('MODEL', `Invoking: ${eventName || 'LLM'}`)
+                // Try to extract the actual model name
+                let actualModel = ''
+                const kwargs = eventData.data?.kwargs || {}
+                
+                if (kwargs.model_name) actualModel = kwargs.model_name
+                else if (kwargs.model) actualModel = kwargs.model
+                else if (kwargs.invocation_params?.model) actualModel = kwargs.invocation_params.model
+                else if (kwargs.invocation_params?.model_name) actualModel = kwargs.invocation_params.model_name
+                else if (eventData.metadata?.model_name) actualModel = eventData.metadata.model_name
+                else if (eventData.metadata?.ls_model_name) actualModel = eventData.metadata.ls_model_name
+
+                const displayName = actualModel ? `${eventName || 'LLM'} (${actualModel})` : (eventName || 'LLM')
+                addLog('MODEL', `Invoking: ${displayName}`)
+
                 if (eventData.data?.input?.messages) {
                   // Flatten if it's a list of lists (sometimes happens in LangChain)
                   const rawMsgs = eventData.data.input.messages
@@ -466,7 +491,7 @@ export function useAgent() {
 
                   llmContexts.value.push({
                      id: runId,
-                     model: eventName || 'Unknown Model',
+                     model: displayName,
                      timestamp: new Date().toLocaleTimeString(),
                      prompts: msgs.map(normalizeMessage)
                    })
@@ -477,7 +502,7 @@ export function useAgent() {
                    
                    llmContexts.value.push({
                      id: runId,
-                     model: eventName || 'Unknown Model',
+                     model: displayName,
                      timestamp: new Date().toLocaleTimeString(),
                      prompts: prompts.map((p: string) => ({ role: 'prompt', content: p }))
                    })
@@ -530,17 +555,17 @@ export function useAgent() {
                 }
 
                 if (usage) {
-                    // If we have real usage, we should technically replace our estimates.
-                    // But since we have multiple streaming chunks and potentially multiple model calls,
-                    // replacing is complex.
-                    // For now, if usage is present, we add it. 
-                    // This might double count if we also estimated.
-                    // Given the user's environment (Ollama), real usage is likely missing, so this block won't run.
-                    // If it does run, better to have more tokens than 0.
+                    const realInput = usage.input_tokens || 0
+                    const realOutput = usage.output_tokens || 0
+                    const streamedCount = (runId && streamedTokensByRunId.value[runId]) || 0
                     
-                    metrics.inputTokens += usage.input_tokens || 0
-                    metrics.outputTokens += usage.output_tokens || 0
-                    metrics.totalTokens += usage.total_tokens || 0
+                    const correction = realOutput - streamedCount
+                    
+                    metrics.inputTokens += realInput
+                    metrics.outputTokens += correction
+                    metrics.totalTokens += realInput + correction
+                    
+                    addLog('METRICS', `Tokens: In=${realInput}, Out=${realOutput} (Streamed=${streamedCount})`)
                 } else {
                     // Fallback: If no usage info and outputTokens is still 0 (streaming failed to count),
                     // estimate from the final message content.
@@ -554,13 +579,19 @@ export function useAgent() {
               }
               else if (eventType === 'on_chain_end' && eventName === 'LangGraph') {
                 const outMsgs = eventData.data?.output?.messages
-                if (!currentMessage.content && Array.isArray(outMsgs)) {
+                if (Array.isArray(outMsgs)) {
                   for (let i = outMsgs.length - 1; i >= 0; i--) {
                     const m: any = outMsgs[i]
-                    const t = m?.type ?? m?.kwargs?.type
+                    const t = m?.type === 'constructor'
+                      ? (m?.kwargs?.type ?? m?.type)
+                      : (m?.type ?? m?.kwargs?.type)
                     const c = m?.content ?? m?.kwargs?.content
                     if (t === 'ai' && typeof c === 'string' && c) {
-                      currentMessage.content = c
+                      if (!currentMessage.content) {
+                        currentMessage.content = c
+                      } else if (!currentMessage.content.includes(c)) {
+                        currentMessage.content += `\n\n${c}`
+                      }
                       break
                     }
                   }
@@ -611,6 +642,38 @@ export function useAgent() {
                           duration: 5000
                         })
                       })
+                   }
+                }
+                else if (eventName === 'tutorial_export_ready') {
+                   const data = eventData.data
+                   if (data && data.download_url) {
+                      addLog('EXPORT', `Tutorial export ready: ${data.download_url}`)
+                      // Append download link to content if not already present
+                      if (currentMessage.content && !currentMessage.content.includes(data.download_url)) {
+                        currentMessage.content += `\n\n[下载离线教程包](${data.download_url})`
+                      }
+                   }
+                }
+                else if (eventName === 'tutorial_generation_progress') {
+                   const data = eventData.data
+                   if (data) {
+                      addLog('PROGRESS', `Generating: ${data.lesson_title} (${data.module_index + 1}-${data.lesson_index + 1})`)
+                      // We can optionally show this in the message content as a temporary status
+                      // But better to just log it or maybe update a status line?
+                      // For now, let's append a temporary status line if the message is empty
+                      if (!currentMessage.content) {
+                         currentMessage.content = `正在生成教程内容...\n目前进度：${data.module_title} - ${data.lesson_title}`
+                      } else {
+                         // Update the last line if it looks like a status line
+                         const lines = currentMessage.content.split('\n')
+                         const lastLine = lines.length > 0 ? lines[lines.length - 1] : undefined
+                         if (lastLine?.startsWith('目前进度：')) {
+                            lines[lines.length - 1] = `目前进度：${data.module_title} - ${data.lesson_title}`
+                            currentMessage.content = lines.join('\n')
+                         } else {
+                            currentMessage.content += `\n目前进度：${data.module_title} - ${data.lesson_title}`
+                         }
+                      }
                    }
                 }
               }

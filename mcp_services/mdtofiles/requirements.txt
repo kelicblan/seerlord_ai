@@ -1,0 +1,4 @@
+mcp>=0.1.0
+python-docx
+docx2pdf
+python-pptx

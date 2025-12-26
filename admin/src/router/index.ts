@@ -52,6 +52,42 @@ const router = createRouter({
           name: 'skills',
           component: () => import('@/views/SkillManage.vue'),
           meta: { title: 'common.nav_skills' }
+        },
+        {
+          path: 'knowledge',
+          name: 'knowledge',
+          component: () => import('@/views/KnowledgeBase.vue'),
+          meta: { title: 'common.nav_knowledge' }
+        },
+        {
+          path: 'knowledge-graph',
+          name: 'knowledge-graph',
+          component: () => import('@/views/KnowledgeGraph.vue'),
+          meta: { title: 'common.nav_knowledge_graph' }
+        },
+        {
+          path: 'content-plaza',
+          name: 'content-plaza',
+          component: () => import('@/views/AgentContentPlaza.vue'),
+          meta: { title: 'common.nav_content_plaza' }
+        },
+        {
+          path: 'api-platform',
+          name: 'api-platform',
+          component: () => import('@/views/ApiPlatform.vue'),
+          meta: { title: 'common.nav_api_platform' }
+        },
+        {
+          path: 'settings',
+          name: 'settings',
+          component: () => import('@/views/Settings.vue'),
+          meta: { title: 'common.settings' }
+        },
+        {
+          path: 'help',
+          name: 'help',
+          component: () => import('@/views/HelpCenter.vue'),
+          meta: { title: 'help.title' }
         }
       ]
     }

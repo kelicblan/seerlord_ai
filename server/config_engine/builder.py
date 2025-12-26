@@ -7,6 +7,9 @@ import operator
 from langchain_core.runnables import RunnableConfig
 from server.config_engine.loader import ConfigLoader, AgentConfig, TaskConfig
 from server.core.llm import get_llm
+import uuid
+from server.core.database import SessionLocal
+from server.models.artifact import AgentArtifact
 
 class AgentState(TypedDict, total=False):
     results: Annotated[Dict[str, str], lambda x, y: {**x, **y}]  # TaskID -> Output mapping (Merge strategy)
@@ -20,7 +23,7 @@ class AgentBuilder:
         self.agents_config = self.loader.load_agents(agents_path)
         self.tasks_config = self.loader.load_tasks(tasks_path)
         
-    def _create_node_func(self, task: TaskConfig, agent: AgentConfig):
+    def _create_node_func(self, task: TaskConfig, agent: AgentConfig, is_final_task: bool):
         """
         Creates a closure for the node execution function.
         """
@@ -157,6 +160,30 @@ class AgentBuilder:
             
             logger.info(f"✅ Task {task.id} Completed.")
             
+            if is_final_task and final_content:
+                try:
+                    tenant_id = state.get("tenant_id") or config.get("configurable", {}).get("tenant_id")
+                    user_id = state.get("user_id") or config.get("configurable", {}).get("user_id")
+                    plugin_id = state.get("target_plugin") or state.get("agent_name") or task.agent
+                    execution_id = config.get("configurable", {}).get("execution_id")
+
+                    if tenant_id:
+                        async with SessionLocal() as db:
+                            db.add(AgentArtifact(
+                                id=str(uuid.uuid4()),
+                                tenant_id=str(tenant_id),
+                                user_id=str(user_id) if user_id else None,
+                                agent_id=str(plugin_id),
+                                execution_id=str(execution_id) if execution_id else None,
+                                type="content",
+                                value=str(final_content),
+                                title=str(task.description) if task.description else str(task.id),
+                                description=str(task.expected_output) if task.expected_output else None,
+                            ))
+                            await db.commit()
+                except Exception as e:
+                    logger.error(f"Failed to save content artifact: {e}")
+
             # 4. Return update for State
             return {"results": {task.id: str(final_content)}}
             
@@ -169,13 +196,14 @@ class AgentBuilder:
         previous_node_id = None
         first_node_id = None
         
+        last_task_id = self.tasks_config[-1].id if self.tasks_config else None
         for task in self.tasks_config:
             agent = self.agents_config.get(task.agent)
             if not agent:
                 raise ValueError(f"Agent '{task.agent}' not found in configuration.")
             
             node_id = task.id
-            node_func = self._create_node_func(task, agent)
+            node_func = self._create_node_func(task, agent, is_final_task=(task.id == last_task_id))
             
             workflow.add_node(node_id, node_func)
             

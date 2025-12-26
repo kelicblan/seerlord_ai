@@ -1,7 +1,7 @@
 from langchain_core.runnables import Runnable
 from server.kernel.interface import AgentPlugin
 from server.config_engine.builder import AgentBuilder
-from .graph import tutorial_graph
+from .graph import app as tutorial_graph
 import os
 
 class TutorialPlugin(AgentPlugin):

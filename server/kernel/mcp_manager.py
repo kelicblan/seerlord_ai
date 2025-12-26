@@ -154,12 +154,12 @@ class MCPManager:
 
         return command
 
-    async def load_config(self, config_path: str = "mcp.json"):
+    async def load_config(self, config_path: str = "server/mcp.json"):
         """
         从配置文件加载 MCP servers，并尝试建立连接。
         注意：即使连接失败，也会把“已配置/失败原因”写入状态，便于前端展示与排障。
         """
-        import os
+        import os   
 
         resolved = self._resolve_config_path(config_path)
         if not resolved:
@@ -305,26 +305,29 @@ class MCPManager:
             
             # Create a LangChain StructuredTool
             # We need to capture server_name and tool_name in the closure
-            @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-            async def _tool_func(**kwargs):
-                try:
-                    result = await session.call_tool(tool_name, arguments=kwargs)
-                    # Extract text content for LangChain compatibility
-                    if hasattr(result, 'content') and isinstance(result.content, list):
-                        texts = []
-                        for item in result.content:
-                            if hasattr(item, 'type') and item.type == 'text' and hasattr(item, 'text'):
-                                texts.append(item.text)
-                        if texts:
-                            return "\n".join(texts)
-                    return str(result)
-                except Exception as e:
-                    logger.error(f"Error calling MCP tool {tool_name}: {e}")
-                    raise e
+            # Using a factory function to properly capture the loop variable 'tool_name'
+            def create_tool_executor(target_tool_name: str):
+                @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+                async def _tool_func(**kwargs):
+                    try:
+                        result = await session.call_tool(target_tool_name, arguments=kwargs)
+                        # Extract text content for LangChain compatibility
+                        if hasattr(result, 'content') and isinstance(result.content, list):
+                            texts = []
+                            for item in result.content:
+                                if hasattr(item, 'type') and item.type == 'text' and hasattr(item, 'text'):
+                                    texts.append(item.text)
+                            if texts:
+                                return "\n".join(texts)
+                        return str(result)
+                    except Exception as e:
+                        logger.error(f"Error calling MCP tool {target_tool_name}: {e}")
+                        raise e
+                return _tool_func
 
             lc_tool = StructuredTool.from_function(
                 func=None,
-                coroutine=_tool_func,
+                coroutine=create_tool_executor(tool_name),
                 name=tool_name,
                 description=tool_desc,
                 args_schema=args_schema

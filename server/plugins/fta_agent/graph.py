@@ -7,6 +7,8 @@ from loguru import logger
 
 from server.core.config import settings
 from server.core.llm import get_llm
+from server.memory.manager import MemoryManager
+from server.memory.tools import memory_node
 from .state import FTAState, FTANode
 from .tools import nodes_to_plantuml
 
@@ -64,7 +66,7 @@ def initialize_analysis(state: FTAState):
         "score": 0
     }
 
-def root_cause_analysis(state: FTAState):
+async def root_cause_analysis(state: FTAState):
     """
     递归分析节点
     """
@@ -99,9 +101,31 @@ def root_cause_analysis(state: FTAState):
     if feedback_history:
         feedback_context = "\n\n[Previous Feedback to Address]:\n" + "\n".join(feedback_history)
 
+    # Memory / RAG Context Retrieval
+    rag_context = ""
+    try:
+        manager = await MemoryManager.get_instance()
+        # Search for context relevant to the current event
+        # Use retrieve_context which handles profile + facts
+        context_dict = await manager.retrieve_context(query=current_node.label, user_id=state.get("user_id"))
+        
+        parts = []
+        if context_dict["memories"]:
+            parts.extend([f"- {m}" for m in context_dict["memories"]])
+            
+        if parts:
+            rag_context = "\n\n[Relevant Historical Knowledge]:\n" + "\n".join(parts)
+
+    except Exception as e:
+        logger.warning(f"Memory Retrieval failed: {e}")
+        
+    global_memory = state.get("memory_context", "")
+
     system_prompt = (
         f"You are an expert in Fault Tree Analysis (FTA). "
         f"Analyze the event: '{current_node.label}'. "
+        f"{global_memory}\n"
+        f"{rag_context}"
         "Identify the immediate direct causes. "
         "Classify them as 'intermediate' (needs further analysis) or 'basic_event' (root cause). "
         "Determine if the relationship is OR or AND."
@@ -267,14 +291,15 @@ def revision_check(state: FTAState):
 # 构建图
 workflow = StateGraph(FTAState)
 
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("initialize", initialize_analysis)
 workflow.add_node("analyze", root_cause_analysis)
 workflow.add_node("critique_tree", critique_tree)
 workflow.add_node("revise_tree", revise_tree)
 workflow.add_node("finalize", finalize_result)
 
-workflow.set_entry_point("initialize")
-
+workflow.set_entry_point("memory_load")
+workflow.add_edge("memory_load", "initialize")
 workflow.add_edge("initialize", "analyze")
 
 workflow.add_conditional_edges(
@@ -298,4 +323,4 @@ workflow.add_conditional_edges(
 workflow.add_edge("revise_tree", "critique_tree")
 workflow.add_edge("finalize", END)
 
-fta_graph = workflow.compile()
+app = workflow.compile()

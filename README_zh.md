@@ -29,7 +29,29 @@
 - **插件化系统 (Plugin System)**: 所有的业务能力（如新闻播报、教程生成、金融分析等）均通过插件实现，即插即用。
 - **智能体编排 (LangGraph)**: 利用 LangGraph 构建复杂的有状态多智能体工作流。
 - **MCP 支持**: 集成 Model Context Protocol (MCP)，实现标准化的上下文和工具交互。
+- **双引擎知识系统**: 结合了标准 **RAG**（基于 Qdrant 的向量检索）用于高效文档检索，以及先进的 **GraphRAG**（基于 Neo4j 的图谱检索）用于深度实体关系推理与混合搜索。
 - **高性能后端**: 基于 FastAPI 构建的异步后端，支持 SSE 流式响应。
+
+## 🔌 内置生态系统
+
+### 插件 (Agents)
+SeerLord 在 `server/plugins/` 目录下提供了丰富的内置插件：
+- **Comic Book Generator**: 自动根据故事生成漫画。
+- **Data Analyst**: 数据分析与报告生成专家。
+- **Deep Research**: 针对复杂话题进行深度研究。
+- **Document Translator**: 保持格式的文档翻译工具。
+- **FTA Agent**: 故障树分析 (Fault Tree Analysis) 智能体，用于系统可靠性工程。
+- **General Chat**: 通用对话智能体。
+- **Novel Generator**: 小说与创意故事写作助手。
+- **Podcaster**: 播客脚本与音频内容生成。
+- **PPT Generator**: 自动生成演示文稿 (PPT)。
+- **Reasoning Engine**: 处理复杂问题的推理引擎。
+
+### MCP 服务
+在 `mcp_services/` 目录下集成了以下 MCP 服务以扩展能力：
+- **Markdownify**: 将网页内容转换为干净的 Markdown。
+- **MDToFiles**: 将 Markdown 文件拆分为多个文件。
+- **News**: 获取并处理实时新闻更新。
 
 ## 🏗️ 架构概览 (Architecture)
 
@@ -83,7 +105,8 @@ graph TD
 - **语言**: Python 3.11+
 - **框架**: FastAPI, LangChain, LangGraph
 - **数据库**: PostgreSQL（可选；用于持久化/Checkpoint）
-- **向量库**: Qdrant（可选；用于记忆与技能检索）
+- **向量库**: Qdrant（可选；用于记忆、技能检索与 RAG）
+- **图数据库**: Neo4j（可选；用于知识图谱与 GraphRAG）
 - **工具库**: Pydantic, Loguru, SSE-Starlette
 - **管理台**: Vue 3 + Vite + TypeScript（位于 `admin/`）
 
@@ -95,9 +118,7 @@ seerlord_ai/
 ├── server/
 │   ├── core/           # 核心配置与 LLM 封装
 │   ├── kernel/         # 微内核实现 (注册表, MCP 管理, 记忆管理)
-│   ├── plugins/        # 插件目录 (包含各类 Agent 实现)
-│   ├── skills/         # 技能目录 (Fast Track 原子能力)
-│   └── main.py         # 应用入口
+│   ├── main.py         # 应用入口
 ├── mcp_services/       # MCP 服务实现
 ├── scripts/            # 实用脚本
 ├── mcp.json            # MCP 服务配置（启动时如存在会自动加载）
@@ -112,6 +133,7 @@ seerlord_ai/
 - Node.js 18+（可选；用于 `admin/` 与部分 MCP 服务）
 - PostgreSQL（可选；用于 Checkpoint 与技能元数据）
 - Qdrant（可选；用于向量记忆与技能检索）
+- Neo4j（可选；用于知识图谱与 GraphRAG）
 
 ### 安装依赖
 
@@ -135,7 +157,8 @@ cp .env.example .env
 - `LLM_PROVIDER` 支持 `openai` 与 `ollama`（兼容 OpenAI `/v1` 协议的服务也可用）。
 - 未配置数据库时，LangGraph 会回退到内存 Checkpoint（重启后状态丢失）。
 - 未配置 Qdrant 时，向量记忆与基于向量的技能检索会被禁用。
-- 大部分 `/api/*` 与 `/agent` 路由需要携带租户头 `X-API-Key`；本地开发可用 `sk-admin-test`（见 `server/api/auth.py`）。
+- 大部分 `/api/*` 与 `/agent` 路由需要携带用。
+- 未配置 Neo4j 时，知识图谱与 GraphRAG 相关功能将不可租户头 `X-API-Key`；本地开发可用 `sk-admin-test`（见 `server/api/auth.py`）。
 
 ### 启动服务
 

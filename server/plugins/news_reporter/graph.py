@@ -5,7 +5,11 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from server.core.llm import get_llm
 from server.kernel.mcp_manager import mcp_manager
+from server.memory.tools import memory_node
 from loguru import logger
+import uuid
+from server.core.database import SessionLocal
+from server.models.artifact import AgentArtifact
 
 # Define State
 class NewsState(TypedDict):
@@ -13,6 +17,7 @@ class NewsState(TypedDict):
     # Context
     tenant_id: str
     user_id: str
+    memory_context: str
     
     news_content: str
     critique_count: int
@@ -76,6 +81,8 @@ async def summarize_node(state: NewsState):
     if not news_content:
         return {"messages": [AIMessage(content="Sorry, I couldn't find any major global news in the last 24 hours.")]}
 
+    memory_context = state.get("memory_context", "")
+
     base_prompt = (
         "You are a professional news editor for 'SeerLord AI'.\n"
         "Your task is to summarize the provided global news articles into a concise, engaging Daily Briefing.\n"
@@ -86,6 +93,7 @@ async def summarize_node(state: NewsState):
         "4. Include the source and a link for each item if available.\n"
         "5. Keep it under 1000 words.\n"
         "6. Language: Chinese (Simplified).\n"
+        f"{memory_context}\n"
         f"{feedback_context}\n\n"
     )
 
@@ -160,17 +168,39 @@ def should_revise(state: NewsState):
 
 # Finalize Node (Optional, just to wrap up)
 async def finalize_node(state: NewsState):
-    return {"messages": [AIMessage(content=state["latest_summary"])]}
+    summary = state.get("latest_summary") or ""
+    if summary:
+        try:
+            tenant_id = state.get("tenant_id")
+            user_id = state.get("user_id")
+            if tenant_id:
+                async with SessionLocal() as db:
+                    db.add(AgentArtifact(
+                        id=str(uuid.uuid4()),
+                        tenant_id=str(tenant_id),
+                        user_id=str(user_id) if user_id else None,
+                        agent_id="news_reporter",
+                        type="content",
+                        value=str(summary),
+                        title="24小时全球重大新闻简报",
+                        description="自动生成的新闻摘要内容",
+                    ))
+                    await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to save content artifact: {e}")
+    return {"messages": [AIMessage(content=summary)]}
 
 # Build Graph
 graph_builder = StateGraph(NewsState)
 
+graph_builder.add_node("memory_load", memory_node)
 graph_builder.add_node("search_news", search_node)
 graph_builder.add_node("summarize_news", summarize_node)
 graph_builder.add_node("critique_news", critique_node)
 graph_builder.add_node("finalize_news", finalize_node)
 
-graph_builder.add_edge(START, "search_news")
+graph_builder.add_edge(START, "memory_load")
+graph_builder.add_edge("memory_load", "search_news")
 graph_builder.add_edge("search_news", "summarize_news")
 graph_builder.add_edge("summarize_news", "critique_news")
 
@@ -186,4 +216,4 @@ graph_builder.add_conditional_edges(
 graph_builder.add_edge("finalize_news", END)
 
 # Compile Graph
-graph = graph_builder.compile()
+app = graph_builder.compile()

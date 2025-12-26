@@ -1,20 +1,17 @@
 import sys
-import os
-from loguru import logger
+from pathlib import Path
 
 # Add project root to sys.path
-sys.path.append(os.getcwd())
+project_root = Path(__file__).resolve().parents[1]
+sys.path.append(str(project_root))
 
-from server.db.session import engine, Base
-from server.db.models import Tenant, Skill
+from server.db.session import engine
+from server.db.models import Base
 
 def init_db():
-    """
-    初始化本地数据库表结构（同步 SQLAlchemy 引擎版本）。
-    """
-    logger.info("开始创建数据库表...")
+    print("Creating database tables...")
     Base.metadata.create_all(bind=engine)
-    logger.success("数据库表创建完成！")
+    print("Tables created successfully.")
 
 if __name__ == "__main__":
     init_db()

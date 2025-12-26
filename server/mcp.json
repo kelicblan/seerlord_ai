@@ -1,0 +1,83 @@
+{
+  "mcpServers": {
+    "news_service": {
+      "command": "python",
+      "args": [
+        "../mcp_services/news/server.py"
+      ]
+    },
+    "bingcn": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "bing-cn-mcp"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    "markdownify": {
+      "command": "node",
+      "args": [
+        "../mcp_services/markdownify/dist/index.js"
+      ],
+      "env": {
+        "UV_PATH": "./upload"
+      }
+    },
+    "mdtofiles": {
+      "command": "mcp_services/mdtofiles/.venv/Scripts/python",
+      "args": [
+        "../mcp_services/mdtofiles/server.py"
+      ]
+    },
+    "mcp-server-chart": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@antv/mcp-server-chart"
+      ]
+    },
+    "mermaid": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@peng-shawn/mermaid-mcp-server"
+      ],
+      "env": {
+        "CONTENT_IMAGE_SUPPORTED": "false",
+        "PUPPETEER_EXECUTABLE_PATH": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
+    },
+    "smtp-email-server": {
+      "command": "uvx",
+      "args": [
+        "mcp-email-server",
+        "stdio"
+      ],
+      "env": {
+        "MCP_EMAIL_SERVER_SMTP_HOST": "smtp.zoho.com",
+        "MCP_EMAIL_SERVER_SMTP_PORT": "465",
+        "MCP_EMAIL_SERVER_EMAIL_ADDRESS": "seerlord_agent@zohomail.cn",
+        "MCP_EMAIL_SERVER_PASSWORD": "ke135246"
+      }
+    },
+    "phone-mcp": {
+      "command": "uvx",
+      "args": [
+        "phone-mcp"
+      ]
+    },
+    "mcp-scholarly": {
+      "command": "uvx",
+      "args": [
+        "mcp-scholarly"
+      ]
+    }
+  }
+}

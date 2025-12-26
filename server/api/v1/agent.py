@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import Any, Dict, Optional, List
@@ -13,12 +13,14 @@ from jose import jwt, JWTError
 
 from server.kernel.registry import registry
 from server.kernel.master_graph import build_master_graph
-from server.api.auth import get_current_tenant_id
+from server.api.auth import get_current_tenant_id, get_current_tenant_id_optional
 from server.core.database import get_db, SessionLocal
 from server.core.config import settings
 from server.models.user import User
 from server.models.llm_trace import LLMTrace
+from server.models.tutorial_export import TutorialExport
 from datetime import datetime
+from pathlib import Path
 
 router = APIRouter()
 
@@ -49,7 +51,7 @@ class StreamInput(BaseModel):
 @router.post("/stream_events")
 async def stream_events(
     request: StreamInput,
-    tenant_id: str = Depends(get_current_tenant_id),
+    tenant_id: str = Depends(get_current_tenant_id_optional),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     user_info_str = f" (User: {current_user.username})" if current_user else " (No User Token)"
@@ -146,6 +148,20 @@ async def stream_events(
                     data = json.dumps(serializable_event)
                     yield f"data: {data}\n\n"
                     
+                    # Log event type for debugging
+                    event_type = serializable_event.get("event")
+                    if event_type == "on_chat_model_start":
+                        logger.info(f"Stream: Chat Model Start (RunID: {serializable_event.get('run_id')})")
+                    elif event_type == "on_chat_model_stream":
+                        # Too verbose to log every chunk, but useful for deep debug
+                        pass 
+                    elif event_type == "on_chat_model_end":
+                        logger.info(f"Stream: Chat Model End (RunID: {serializable_event.get('run_id')})")
+                    elif event_type == "on_tool_start":
+                        logger.info(f"Stream: Tool Start (Name: {serializable_event.get('name')})")
+                    elif event_type == "on_tool_end":
+                        logger.info(f"Stream: Tool End (Name: {serializable_event.get('name')})")
+                    
                     # --- DB Tracing Logic ---
                     try:
                         event_type = serializable_event.get("event")
@@ -230,3 +246,59 @@ async def get_master_graph():
     except Exception as e:
         logger.error(f"Failed to generate master graph: {e}")
         return {"mermaid": None, "error": str(e)}
+
+@router.get("/tutorial_exports/{export_id}/download")
+async def download_tutorial_export(
+    export_id: str,
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(TutorialExport).where(TutorialExport.id == export_id))
+    export = result.scalars().first()
+    if not export:
+        raise HTTPException(status_code=404, detail="Export not found")
+
+    if export.tenant_id and export.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    if export.user_id:
+        if not current_user or export.user_id != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    user_files_base_dir = (Path.cwd() / "server" / "data" / "user_files").resolve()
+    legacy_base_dir = (Path.cwd() / "server" / "data" / "tutorial_exports").resolve()
+
+    raw_path = (export.file_path or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=404, detail="Export file missing")
+
+    p = Path(raw_path)
+    if p.is_absolute():
+        file_path = p.resolve()
+        allowed_bases = [user_files_base_dir, legacy_base_dir]
+        for base in allowed_bases:
+            try:
+                file_path.relative_to(base)
+                break
+            except Exception:
+                continue
+        else:
+            raise HTTPException(status_code=400, detail="Invalid export path")
+    else:
+        safe_user_id = "".join(ch for ch in (export.user_id or "") if ch.isalnum() or ch in {"-", "_"})
+        expected_base = (user_files_base_dir / safe_user_id).resolve() if safe_user_id else user_files_base_dir
+        file_path = (user_files_base_dir / p).resolve()
+        try:
+            file_path.relative_to(expected_base)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid export path")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Export file missing")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="text/html; charset=utf-8",
+        filename=f"tutorial_{export_id}.html"
+    )

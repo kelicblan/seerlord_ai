@@ -10,6 +10,7 @@ class VoyagerState(TypedDict):
     # Context
     tenant_id: str
     user_id: str
+    memory_context: str
     
     # Voyager specific
     current_skill: HierarchicalSkill

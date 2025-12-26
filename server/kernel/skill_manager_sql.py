@@ -10,7 +10,9 @@ from server.core.config import settings
 from server.db.session import SessionLocal
 from server.db.models import Skill as SkillModel, SkillLevelEnum
 from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent
-from server.kernel.memory_manager import memory_manager
+from server.memory.storage import VectorStoreManager
+from server.memory.schemas import MemoryItem, MemoryType
+from server.core.llm import get_embeddings
 
 class SQLSkillManager:
     """
@@ -22,19 +24,21 @@ class SQLSkillManager:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SQLSkillManager, cls).__new__(cls)
-            # No specific resource init needed if using shared memory_manager
-            # But we rely on memory_manager being initialized elsewhere (server/main.py)
+            cls._instance.storage = None
+            cls._instance.embeddings = None
         return cls._instance
 
     async def initialize(self):
         """Ensure dependencies are ready."""
-        # This might be called from main startup
-        pass
+        self.storage = await VectorStoreManager.get_instance()
+        self.embeddings = get_embeddings()
 
     async def add_skill(self, skill: HierarchicalSkill, tenant_id: str, user_id: str = None):
         """
         Save a skill to Postgres and Qdrant.
         """
+        if not self.storage: await self.initialize()
+
         db = SessionLocal()
         try:
             # 1. Save to PostgreSQL
@@ -62,30 +66,27 @@ class SQLSkillManager:
             
             db.commit()
 
-            # 2. Save to Qdrant (via MemoryManager)
+            # 2. Save to Qdrant (via VectorStoreManager)
             # We use a specific metadata type to distinguish skills from normal memories
-            if memory_manager.enabled:
-                content_text = f"{skill.name}: {skill.description}"
-                metadata = {
-                    "type": "skill",
-                    "skill_id": skill.id,
-                    "name": skill.name,
-                    "level": skill.level.value,
-                    # tenant_id is added by save_experience automatically
-                }
-                if user_id:
-                    metadata["user_id"] = user_id
-                
-                # We use a fixed session_id for skills to group them logically, 
-                # though tenant_id is the real boundary.
-                await memory_manager.save_experience(
-                    content=content_text,
-                    agent_name="system_skill_manager",
-                    session_id="global_skills_repo",
-                    tenant_id=tenant_id,
-                    user_id=user_id,
-                    metadata=metadata
-                )
+            content_text = f"{skill.name}: {skill.description}"
+            metadata = {
+                "type": MemoryType.SKILL.value,
+                "skill_id": skill.id,
+                "name": skill.name,
+                "level": skill.level.value,
+                "tenant_id": tenant_id
+            }
+            if user_id:
+                metadata["user_id"] = user_id
+            
+            item = MemoryItem(
+                content=content_text,
+                type=MemoryType.SKILL,
+                importance_score=1.0,
+                metadata=metadata
+            )
+            
+            await self.storage.add_documents([item])
                 
             logger.info(f"✅ Saved skill {skill.name} to SQL + Qdrant (Tenant: {tenant_id}, User: {user_id})")
 
@@ -99,36 +100,31 @@ class SQLSkillManager:
         """
         Retrieve best skill using Vector Search -> SQL Lookup.
         """
-        if not memory_manager.enabled:
-            return HierarchicalSkill(
-                name="default_meta_skill",
-                description="Memory disabled, returning default.",
-                level=SkillLevel.META,
-                content=SkillContent(code_logic="pass")
-            ), "Memory Disabled"
+        if not self.storage: await self.initialize()
 
         try:
-            # 1. Search in Qdrant
+            # 1. Generate Query Vector
+            query_vector = await self.embeddings.aembed_query(query)
+
+            # 2. Search in Qdrant
             # We search specifically for skills in the "global_skills_repo" session
-            candidates = await memory_manager.retrieve_relevant(
-                query=query, 
-                tenant_id=tenant_id,
-                user_id=user_id,
-                agent_name=agent_name,
-                k=3,
-                threshold=min_score
+            candidates = await self.storage.search(
+                query_vector=query_vector, 
+                limit=3,
+                score_threshold=min_score,
+                filter_dict={"type": MemoryType.SKILL.value, "tenant_id": tenant_id}
             )
             
             skill_ids = []
-            for c in candidates:
-                meta = c.get("metadata", {})
-                if meta.get("type") == "skill" and "skill_id" in meta:
+            for item in candidates:
+                meta = item.metadata
+                if "skill_id" in meta:
                     skill_ids.append(meta["skill_id"])
             
             if not skill_ids:
                 return self._get_default_meta_skill(), "Fallback (No Skill Found)"
 
-            # 2. Fetch from SQL
+            # 3. Fetch from SQL
             db = SessionLocal()
             skills_map = {}
             try:
@@ -138,7 +134,7 @@ class SQLSkillManager:
             finally:
                 db.close()
                 
-            # 3. Reconstruct and Rank
+            # 4. Reconstruct and Rank
             # Return the first one that was found in Qdrant (preserving rank order)
             for sid in skill_ids:
                 if sid in skills_map:

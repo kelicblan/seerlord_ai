@@ -35,7 +35,7 @@ class MasterPlan(BaseModel):
     tasks: List[Task] = Field(description="List of tasks to execute in order.")
     original_request: str = Field(description="The original user request.")
 
-from server.kernel.memory_manager import memory_manager
+from server.memory.manager import MemoryManager
 
 # =============================================================================
 # State Definition
@@ -328,18 +328,20 @@ async def planner_node(state: MasterState, config: RunnableConfig) -> Dict[str, 
 
     # Retrieve Relevant Memories
     memories = []
-    if memory_manager.enabled and user_input:
-        memories = await memory_manager.retrieve_relevant(
-            query=user_input,
-            tenant_id=state.get("tenant_id", "default_tenant"),
-            user_id=state.get("user_id"),
-            agent_name=agent_name,
-            k=3
-        )
+    try:
+        mem_mgr = await MemoryManager.get_instance()
+        if user_input:
+            context_result = await mem_mgr.retrieve_context(
+                query=user_input,
+                user_id=state.get("user_id", "default_user")
+            )
+            memories = context_result.get("memories", [])
+    except Exception as e:
+        logger.error(f"Memory retrieval failed: {e}")
     
     memory_context = ""
     if memories:
-        memory_context = "\nRelevant Memories:\n" + "\n".join([f"- {m['content']}" for m in memories]) + "\n"
+        memory_context = "\nRelevant Memories:\n" + "\n".join([f"- {m}" for m in memories]) + "\n"
 
     plugins = registry.plugins
     
@@ -488,7 +490,8 @@ async def final_answer_node(state: MasterState) -> Dict[str, Any]:
         pass
         
     # Save Interaction to Memory
-    if memory_manager.enabled:
+    try:
+        memory_manager = await MemoryManager.get_instance()
         messages = state.get("messages", [])
         # Find the last human message and the last AI message
         # Note: messages might be mixed. We want the most recent pair.
@@ -496,19 +499,21 @@ async def final_answer_node(state: MasterState) -> Dict[str, Any]:
         last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
         
         if last_human and last_ai:
-            # Avoid saving duplicates? Qdrant UUID handles ID, but content might be same.
-            # We assume each turn is unique enough or we rely on timestamp.
-            content_to_save = f"User: {last_human.content}\nAI: {last_ai.content}"
             agent_name = state.get("agent_name", "default_agent")
             session_id = state.get("session_id", "unknown_session")
             
-            await memory_manager.save_experience(
-                content=content_to_save,
-                agent_name=agent_name,
-                session_id=session_id,
-                tenant_id=state.get("tenant_id", "default_tenant"),
-                user_id=state.get("user_id")
+            await memory_manager.add_interaction(
+                user_input=last_human.content,
+                ai_response=last_ai.content,
+                user_id=state.get("user_id", "default_user"),
+                metadata={
+                    "agent_name": agent_name,
+                    "session_id": session_id,
+                    "tenant_id": state.get("tenant_id", "default_tenant")
+                }
             )
+    except Exception as e:
+        logger.error(f"Failed to save memory: {e}")
 
     return {} # No changes
 

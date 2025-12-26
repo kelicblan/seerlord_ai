@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const envTenantApiKey = import.meta.env.VITE_TENANT_API_KEY || ''
 
-const getTenantApiKey = () => {
+export const getTenantApiKey = () => {
   const runtimeKey = localStorage.getItem('tenant_api_key') || sessionStorage.getItem('tenant_api_key') || ''
   if (runtimeKey) return runtimeKey
   if (envTenantApiKey) return envTenantApiKey

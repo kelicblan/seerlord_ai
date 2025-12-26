@@ -1,12 +1,14 @@
 import json
 from typing import List, Optional, Tuple, Dict
+from datetime import datetime
 from loguru import logger
 from langchain_core.prompts import ChatPromptTemplate
 
 from server.core.config import settings
-from server.kernel.memory_manager import memory_manager
+from server.memory.storage import VectorStoreManager
+from server.memory.schemas import MemoryItem, MemoryType
 from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent
-from server.core.llm import get_llm
+from server.core.llm import get_llm, get_embeddings
 
 class HierarchicalSkillManager:
     """
@@ -18,37 +20,42 @@ class HierarchicalSkillManager:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(HierarchicalSkillManager, cls).__new__(cls)
-            cls._instance.collection_name = "hierarchical_skills"
+            cls._instance.storage = None
+            cls._instance.embeddings = None
         return cls._instance
 
     async def initialize(self):
-        """Ensure the Qdrant collection exists."""
-        if not memory_manager.enabled:
-            logger.warning("MemoryManager disabled, SkillManager cannot function properly.")
-            return
-
-        # We reuse MemoryManager's client but might want a separate collection in future
-        # For now, we'll store them in the main collection with a specific tag/type
-        pass
+        """Ensure the VectorStore is ready."""
+        self.storage = await VectorStoreManager.get_instance()
+        self.embeddings = get_embeddings()
 
     async def add_skill(self, skill: HierarchicalSkill):
         """Save a skill to the vector store."""
-        if not memory_manager.enabled: return
+        if not self.storage: await self.initialize()
         
         # We store the description as the vector for semantic search
         content_text = f"{skill.name}: {skill.description}"
         
         metadata = skill.to_payload()
-        # Fix collision with MemoryManager's 'content' field
-        metadata["_original_content"] = metadata.pop("content")
-        metadata["type"] = "skill" # Distinguish from normal memories
+        # Fix collision with MemoryItem's 'content' field if needed, 
+        # but MemoryItem uses 'content' as the main text.
+        # Here we want to store the structured skill data in metadata.
         
-        await memory_manager.save_experience(
+        # The 'content' in skill.to_payload() is the SkillContent object (dict).
+        # We should rename it in metadata to avoid confusion with MemoryItem.content
+        if "content" in metadata:
+            metadata["_skill_content"] = metadata.pop("content")
+        
+        metadata["type"] = MemoryType.SKILL.value
+        
+        item = MemoryItem(
             content=content_text,
-            agent_name="system",
-            session_id="global_skills",
+            type=MemoryType.SKILL,
+            importance_score=1.0, # Skills are high importance
             metadata=metadata
         )
+        
+        await self.storage.add_documents([item])
         logger.info(f"Added skill: {skill.name} ({skill.level})")
 
     async def retrieve_best_skill(self, query: str, min_score: float = 0.80) -> Tuple[Optional[HierarchicalSkill], str]:
@@ -56,44 +63,45 @@ class HierarchicalSkillManager:
         Implements the "Bottom-Up Fallback" routing logic.
         Returns: (Skill, MatchReason)
         """
-        if not memory_manager.enabled:
-            return None, "Memory disabled"
+        if not self.storage: await self.initialize()
 
-        # 1. Search for everything relevant
-        results = await memory_manager.retrieve_relevant(
-            query=query, 
-            k=5, 
-            threshold=min_score
+        # 1. Generate Query Vector
+        query_vector = await self.embeddings.aembed_query(query)
+
+        # 2. Search for everything relevant
+        results = await self.storage.search(
+            query_vector=query_vector,
+            limit=5,
+            score_threshold=min_score,
+            filter_dict={"type": MemoryType.SKILL.value}
         )
         
         skills: List[HierarchicalSkill] = []
-        for r in results:
-            if r.get("metadata", {}).get("type") == "skill":
-                try:
-                    # Reconstruct skill object
-                    s_data = r["metadata"]
+        for item in results:
+            try:
+                # Reconstruct skill object
+                s_data = item.metadata.copy()
+                
+                # Restore content
+                if "_skill_content" in s_data:
+                    s_data["content"] = s_data.pop("_skill_content")
                     
-                    # Restore content
-                    if "_original_content" in s_data:
-                        s_data["content"] = s_data.pop("_original_content")
-                        
-                    # Remove Qdrant specific fields if any
-                    if "type" in s_data: del s_data["type"]
-                    if "content" in s_data and isinstance(s_data["content"], str):
-                         # If content was flattened, we might need to handle it, 
-                         # but here we saved the full dict in metadata
-                         pass
-                    
-                    skill = HierarchicalSkill.model_validate(s_data)
-                    skills.append(skill)
-                except Exception as e:
-                    logger.error(f"Failed to parse skill: {e}")
+                # Remove Qdrant specific fields if any
+                if "type" in s_data: del s_data["type"]
+                
+                # We need to ensure 'content' is a dict compatible with SkillContent
+                # In to_payload(), it might be serialized? Assuming it's a dict.
+                
+                skill = HierarchicalSkill.model_validate(s_data)
+                skills.append(skill)
+            except Exception as e:
+                logger.error(f"Failed to parse skill: {e}")
 
         if not skills:
             # Fallback to hardcoded L3 if nothing found
             return self._get_default_meta_skill(), "Fallback to Default Meta"
 
-        # 2. Priority Logic: L1 > L2 > L3
+        # 3. Priority Logic: L1 > L2 > L3
         # Sort by Level (Specific first) and then Score
         # But since we don't have score in the object, we rely on retrieval order (mostly sorted by score)
         

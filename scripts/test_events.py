@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage
 sys.path.append(os.getcwd())
 
 from server.core.config import settings
-from server.kernel.memory_manager import memory_manager
+from server.memory.manager import MemoryManager
 from server.kernel.dynamic_skill_manager import dynamic_skill_manager
 
 async def test_event_stream():
@@ -17,12 +17,9 @@ async def test_event_stream():
     Verify that skill retrieval and evolution emit custom events.
     """
     logger.info("Initializing system...")
-    await memory_manager.initialize()
+    manager = await MemoryManager.get_instance()
+    await manager.initialize()
     
-    if not memory_manager.enabled:
-        logger.error("Memory disabled. skipping.")
-        return
-
     # Wrap the manager call in a RunnableLambda to capture events
     # Because dispatch_custom_event works within a Runnable context
     

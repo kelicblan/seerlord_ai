@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph, END
 from server.core.llm import get_llm
 from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent
 from server.plugins._skill_evolver_.state import EvolverState
+from server.memory.tools import memory_node
 
 # --- Node Implementations ---
 
@@ -108,10 +109,12 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
 
 workflow = StateGraph(EvolverState)
 
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("analyze_gap", analyze_gap)
 workflow.add_node("draft_skill", draft_skill)
 
-workflow.set_entry_point("analyze_gap")
+workflow.set_entry_point("memory_load")
+workflow.add_edge("memory_load", "analyze_gap")
 workflow.add_edge("analyze_gap", "draft_skill")
 workflow.add_edge("draft_skill", END)
 

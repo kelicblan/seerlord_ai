@@ -8,6 +8,7 @@ class EvolverState(TypedDict):
     # Context
     tenant_id: str
     user_id: str
+    memory_context: str
     
     # Input
     task: str # e.g. "analyze_failure", "refine_skill"

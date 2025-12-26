@@ -51,11 +51,18 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = Field(1536, description="Dimension of the embedding vector (1536 for openai-small, 768 for nomic-embed-text)")
     EMBEDDINGS_API_KEY: str | None = Field(None, description="API Key for embeddings if different from OpenAI")
     EMBEDDINGS_ENDPOINT: str | None = Field(None, description="Base URL for embeddings if different from OpenAI")
+    EMBEDDINGS_TIMEOUT_SEC: int = Field(600, description="Embedding request timeout in seconds")
+    EMBEDDINGS_BATCH_SIZE: int = Field(128, description="Batch size for embedding requests")
+    
+    # Reranker Configuration
+    RERANKER_ENDPOINT: str | None = Field(None, description="Reranker API Endpoint")
+    RERANKER_MODEL: str | None = Field(None, description="Reranker Model Name")
 
     # Qdrant Configuration
     QDRANT_URL: str | None = Field(None, description="Qdrant URL (e.g. http://localhost:6333)")
     QDRANT_API_KEY: str | None = Field(None, description="Qdrant API Key")
     QDRANT_COLLECTION: str = Field("agent_memory", description="Qdrant Collection Name")
+    MEMORY_COLLECTION: str = Field("seerlord_long_term_memory", description="Dedicated Qdrant Collection for Long Term Memory")
     SIM_METRIC: str = Field("Cosine", description="Similarity Metric (Cosine, Euclidean, Dot)")
 
     # Database Configuration
@@ -99,7 +106,9 @@ class Settings(BaseSettings):
     # Auth
     SECRET_KEY: str = Field("09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7", description="JWT Secret Key")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # 登录会话过期时间：24小时 (1440分钟)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    ALLOW_DEFAULT_TENANT_FALLBACK: bool = Field(False, description="Allow fallback to default admin tenant when API Key is missing")
 
     # 首启初始化（仅当用户表为空时可用）
     SETUP_TOKEN: str | None = Field(None, description="First-boot setup token. If not set, setup API is disabled.")

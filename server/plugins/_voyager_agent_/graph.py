@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, END
 from server.core.llm import get_llm
 from server.kernel.dynamic_skill_manager import dynamic_skill_manager
 from server.plugins._voyager_agent_.state import VoyagerState
+from server.memory.tools import memory_node
 
 # --- Nodes ---
 
@@ -34,10 +35,13 @@ async def execute_task(state: VoyagerState) -> Dict[str, Any]:
     Execute the task using the retrieved skill's prompt/logic.
     """
     skill = state["current_skill"]
+    memory_context = state.get("memory_context", "")
     llm = get_llm(temperature=0.7)
     
     # Construct System Prompt based on Skill Content
     system_prompt = f"""You are an AI Agent equipped with the skill: '{skill.name}'.
+    
+    {memory_context}
     
     Skill Description: {skill.description}
     
@@ -63,10 +67,12 @@ async def execute_task(state: VoyagerState) -> Dict[str, Any]:
 
 workflow = StateGraph(VoyagerState)
 
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("retrieve_skill", retrieve_skill)
 workflow.add_node("execute_task", execute_task)
 
-workflow.set_entry_point("retrieve_skill")
+workflow.set_entry_point("memory_load")
+workflow.add_edge("memory_load", "retrieve_skill")
 workflow.add_edge("retrieve_skill", "execute_task")
 workflow.add_edge("execute_task", END)
 

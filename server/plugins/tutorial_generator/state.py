@@ -1,8 +1,8 @@
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Dict, Any
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
-from .schema import TutorialSchema
+from .schema import TutorialSchema, CourseOutline, OfflineCoursePackage
 
 # 定义局部状态
 class TutorialState(TypedDict):
@@ -10,6 +10,7 @@ class TutorialState(TypedDict):
     # Context
     tenant_id: str
     user_id: str
+    memory_context: str
     
     tutorial_result: Optional[TutorialSchema]
     detailed_content: Optional[str] # Store the final generated content
@@ -19,3 +20,8 @@ class TutorialState(TypedDict):
     
     # Track used skills for feedback
     used_skill_ids: List[str]
+
+    export_id: Optional[str]
+    export_download_url: Optional[str]
+    course_outline: Optional[CourseOutline]
+    course_package: Optional[Dict[str, Any]]

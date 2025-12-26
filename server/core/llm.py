@@ -3,11 +3,83 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from server.core.config import settings
 from loguru import logger
+from server.db.session import SessionLocal
+from server.db.models import SystemSetting, LLMModel
+
+def get_active_model_config(setting_key: str):
+    """
+    Retrieve the active model configuration from the database.
+    Returns None if not configured or not found.
+    """
+    db = SessionLocal()
+    try:
+        setting = db.query(SystemSetting).filter(SystemSetting.key == setting_key).first()
+        if not setting:
+            return None
+        
+        try:
+            model_id = int(setting.value)
+        except ValueError:
+            return None
+            
+        model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
+        return model
+    except Exception as e:
+        logger.error(f"Error fetching active model config for {setting_key}: {e}")
+        return None
+    finally:
+        db.close()
+
+def get_system_setting_value(key: str, default=None):
+    db = SessionLocal()
+    try:
+        setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        return setting.value if setting else default
+    except Exception:
+        return default
+    finally:
+        db.close()
 
 def get_embeddings():
     """
     Factory function to get the configured Embeddings instance.
     """
+    # Try DB first
+    db_model = get_active_model_config("EMBEDDING_MODEL_ID")
+    timeout = int(get_system_setting_value("LLM_TIMEOUT", settings.LLM_TIMEOUT))
+    
+    if db_model:
+        provider = db_model.provider
+        base_url = db_model.base_url
+        api_key = db_model.api_key
+        model_name = db_model.model_name
+        
+        if provider == "openai":
+            # Clean base_url if it ends with /embeddings
+            if base_url and base_url.endswith("/embeddings"):
+                base_url = base_url[:-11]
+            
+            return OpenAIEmbeddings(
+                api_key=api_key or "dummy",
+                base_url=base_url,
+                model=model_name,
+                timeout=timeout,
+                max_retries=settings.LLM_MAX_RETRIES,
+                check_embedding_ctx_length=False,
+            )
+        elif provider == "ollama":
+             # Clean up base_url
+            if base_url:
+                if "/api/embed" in base_url:
+                    base_url = base_url.split("/api/embed")[0]
+                elif "/v1" in base_url:
+                    base_url = base_url.split("/v1")[0]
+            
+            return OllamaEmbeddings(
+                base_url=base_url,
+                model=model_name
+            )
+
     if settings.EMBEDDING_PROVIDER == "openai":
         api_key = settings.EMBEDDINGS_API_KEY or settings.OPENAI_API_KEY
         base_url = settings.EMBEDDINGS_ENDPOINT or settings.OPENAI_API_BASE
@@ -28,8 +100,16 @@ def get_embeddings():
             check_embedding_ctx_length=False,
         )
     elif settings.EMBEDDING_PROVIDER == "ollama":
+        base_url = settings.EMBEDDINGS_ENDPOINT or settings.OLLAMA_BASE_URL
+        # Clean up base_url for OllamaEmbeddings which expects root url
+        if base_url:
+            if "/api/embed" in base_url:
+                base_url = base_url.split("/api/embed")[0]
+            elif "/v1" in base_url:
+                base_url = base_url.split("/v1")[0]
+
         return OllamaEmbeddings(
-            base_url=settings.OLLAMA_BASE_URL,
+            base_url=base_url,
             model=settings.EMBEDDING_MODEL
         )
     else:
@@ -43,6 +123,45 @@ def get_llm(temperature: float = 0.7, model: Optional[str] = None):
         temperature: Sampling temperature.
         model: Optional override for the model name.
     """
+    db_model = get_active_model_config("AGENT_LLM_ID")
+    timeout = int(get_system_setting_value("LLM_TIMEOUT", settings.LLM_TIMEOUT))
+
+    if db_model:
+        provider = db_model.provider
+        base_url = db_model.base_url
+        api_key = db_model.api_key
+        model_name = model or db_model.model_name
+        
+        if provider == "openai":
+             return ChatOpenAI(
+                api_key=api_key or "dummy",
+                base_url=base_url,
+                model=model_name,
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=settings.LLM_MAX_RETRIES
+            )
+        elif provider == "ollama":
+             # 智能检测：如果 OLLAMA_BASE_URL 是 OpenAI 兼容格式 (/v1)，则使用 ChatOpenAI 客户端
+             if base_url and base_url.endswith("/v1"):
+                logger.info(f"Detected OpenAI-compatible Ollama endpoint from DB: {base_url}")
+                return ChatOpenAI(
+                    api_key="ollama",
+                    base_url=base_url,
+                    model=model_name,
+                    temperature=temperature,
+                    timeout=timeout,
+                    max_retries=settings.LLM_MAX_RETRIES
+                )
+             else:
+                return ChatOllama(
+                    base_url=base_url,
+                    model=model_name,
+                    temperature=temperature,
+                    timeout=timeout
+                )
+    
+    # Fallback to env vars
     if settings.LLM_PROVIDER == "openai":
         if not settings.OPENAI_API_KEY:
             logger.error("OPENAI_API_KEY is missing but LLM_PROVIDER is 'openai'")

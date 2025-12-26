@@ -21,6 +21,8 @@ psycopg-pool = "^3.3.0"
 psycopg-binary = "^3.3.2"
 sse-starlette = "^3.0.3"
 loguru = "^0.7.2"
+markitdown = {version = ">=0.0.1a3", extras = ["docx"]}
+python-docx = "*"
 
 [build-system]
 requires = ["poetry-core"]

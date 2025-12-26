@@ -57,7 +57,7 @@ const handleCreateAccount = () => {
         <div class="relative overflow-hidden border-b border-border min-h-[340px] lg:min-h-0 lg:border-b-0 lg:border-r">
         <div class="absolute inset-0">
           <video
-            class="absolute inset-0 h-full w-full object-cover opacity-90"
+            class="absolute inset-0 object-cover video-adv"
             :src="barVideo"
             :poster="barPoster"
             autoplay
@@ -73,18 +73,18 @@ const handleCreateAccount = () => {
 
         <div class="relative flex h-full flex-col justify-between p-10">
           <div class="inline-flex items-center gap-2">
-            <div class="h-9 w-9 rounded-lg bg-primary/15 ring-1 ring-primary/25" />
-            <div class="text-base font-semibold tracking-wide">SEERLORD AI</div>
+            <div class="h-9 w-9 rounded-lg bg-primary/15 ring-1 ring-primary/25 logo" />
+            <div class="text-white font-semibold tracking-wide text-2xl">SEERLORD AI</div>
           </div>
 
-          <div class="space-y-4">
+          <!-- <div class="space-y-4">
             <div class="text-4xl font-semibold leading-tight">
               {{ t('login.hero_title') }}
             </div>
             <div class="max-w-sm text-sm/6 text-white/70">
               {{ t('login.hero_desc') }}
             </div>
-          </div>
+          </div> -->
 
           <div class="text-xs text-white/60">
             © {{ currentYear }} SeerLord AI
@@ -184,3 +184,15 @@ const handleCreateAccount = () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.logo{
+  background: url('@/assets/images/logo.png') no-repeat center center;
+  background-size: contain;
+}
+.video-adv{
+  width: 570px;
+  height: 677px;
+  max-width:570px;
+}
+</style>
