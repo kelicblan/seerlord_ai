@@ -21,6 +21,7 @@ import {
 import { ElMessage, type FormInstance } from 'element-plus'
 import type { FormRules } from 'element-plus'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import logo from '@/assets/images/logo.png'
 import { useAuth } from '@/composables/useAuth'
 import { updatePassword } from '@/api/user'
 import { useMediaQuery } from '@vueuse/core'
@@ -141,9 +142,7 @@ const navItems = computed(() => [
         <aside class="flex flex-col h-full">
             <!-- Logo area -->
             <div class="p-4 flex items-center gap-2 font-bold text-xl text-primary shrink-0">
-                <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
-                    <Bot class="w-5 h-5" />
-                </div>
+                <img :src="logo" class="w-8 h-8 rounded-lg" alt="SeerLord AI" />
                 <span>SeerLord AI</span>
             </div>
 
