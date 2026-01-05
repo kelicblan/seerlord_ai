@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@peng-shawn/mermaid-mcp-server": "^0.2.0"
+  }
+}

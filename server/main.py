@@ -36,9 +36,10 @@ from server.kernel.master_graph import build_master_graph
 from server.kernel.mcp_manager import mcp_manager
 from server.memory.manager import MemoryManager
 from server.api.auth import TenantMiddleware
-from server.api.v1 import paas_agent, agent, login, users, skills, tools, files, knowledge, artifact, api_keys, settings as settings_api
+from server.api.v1 import paas_agent, agent, login, users, skills, tools, files, knowledge, artifact, api_keys, settings as settings_api, automation
 from server.core.database import engine, Base, SessionLocal
 from anyio import to_thread
+from server.core.scheduler import scheduler, load_jobs_from_db
 
 # -----------------------------------------------------------------------------
 # Global Resources
@@ -157,10 +158,20 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Sync SQLAlchemy tables: {e}")
         logger.warning("Sync SQLAlchemy tables are not initialized. Related APIs may fail.")
 
+    # 5. Start Scheduler
+    logger.info("Starting Automation Scheduler...")
+    scheduler.start()
+    # Load existing tasks
+    await load_jobs_from_db()
+
     yield
     
     # Cleanup
     logger.info("Shutting down SeerLord AI Kernel...")
+    
+    logger.info("Stopping Scheduler...")
+    scheduler.shutdown()
+
     if hasattr(app.state, "db_pool"):
         logger.info("Closing Database Connection Pool...")
         await app.state.db_pool.close()
@@ -244,6 +255,7 @@ app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["Knowledg
 app.include_router(artifact.router, prefix="/api/v1/artifact", tags=["Artifact"])
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["API Keys"])
 app.include_router(settings_api.router, prefix="/api/v1/settings", tags=["Settings"])
+app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])
 
 # SKE Router
 from server.ske.router import router as ske_router

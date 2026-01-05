@@ -4,7 +4,7 @@ from .graph import app as comic_graph
 
 class ComicBookPlugin(AgentPlugin):
     """
-    漫画创作助手插件。
+    漫画式学习课程插件。
     负责根据用户需求生成漫画风格的 PDF 图书。
     """
     def __init__(self):
@@ -16,11 +16,15 @@ class ComicBookPlugin(AgentPlugin):
 
     @property
     def name_zh(self) -> str:
-        return "漫画创作助手"
+        return "漫画式学习课程"
 
     @property
     def description(self) -> str:
         return "Creates comic book style educational content in PDF format. Transforms complex topics into engaging visual stories."
+
+    @property
+    def enable_skills(self) -> bool:
+        return True
 
     def get_graph(self) -> Runnable:
         if not self._graph:

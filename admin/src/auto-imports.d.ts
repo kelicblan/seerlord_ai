@@ -14,6 +14,6 @@ import { UnwrapRef } from 'vue'
 declare module 'vue' {
   interface GlobalComponents {}
   interface ComponentCustomProperties {
-
+    readonly ElNotification: UnwrapRef<typeof import('element-plus/es')['ElNotification']>
   }
 }

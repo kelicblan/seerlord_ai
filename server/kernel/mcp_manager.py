@@ -181,6 +181,22 @@ class MCPManager:
             self._server_configs = {k: v for k, v in servers.items() if isinstance(v, dict)}
 
             for name, server_config in self._server_configs.items():
+                # Handle platform-specific overrides
+                if "platforms" in server_config:
+                    platform_overrides = server_config.get("platforms", {}).get(sys.platform, {})
+                    if platform_overrides:
+                        logger.info(f"Applying {sys.platform} overrides for server '{name}'")
+                        # Override simple fields
+                        for key in ["command", "args"]:
+                            if key in platform_overrides:
+                                server_config[key] = platform_overrides[key]
+                        
+                        # Merge env
+                        if "env" in platform_overrides:
+                            base_env = server_config.get("env") or {}
+                            base_env.update(platform_overrides["env"])
+                            server_config["env"] = base_env
+
                 command = server_config.get("command")
                 args = server_config.get("args", [])
                 env = server_config.get("env")  # Optional env vars

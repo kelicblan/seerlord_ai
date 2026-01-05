@@ -10,7 +10,7 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 
 from server.core.llm import get_llm
 from server.kernel.skill_service import skill_service
-from server.memory.tools import memory_node
+from server.kernel.skill_integration import skill_injector
 from .tools import generate_image_base64
 
 from .schema import CourseOutline, LessonContent, OfflineCoursePackage
@@ -892,26 +892,13 @@ async def generate_offline_course_package(state: TutorialState):
     last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
     query = last_user_msg.content if last_user_msg else "Generate a learning plan"
 
-    # 1. 检索技能
-    retrieved_skills = skill_service.retrieve_skills_for_query(query, category="tutorial_agent")
-
-    skill_prompts = []
-    used_ids = []
-    for skill in retrieved_skills:
-        used_ids.append(skill.id)
-        skill_prompts.append(f"--- SKILL: {skill.name} (L{skill.level}) ---\n{skill.content}")
-    skills_context = "\n\n".join(skill_prompts)
-
-    # 发送技能使用事件
-    await adispatch_custom_event(
-        "skill_usage",
-        {
-            "used_skills": [
-                {"id": s.id, "name": s.name, "level": s.level}
-                for s in retrieved_skills
-            ]
-        }
-    )
+    # 1. 检索技能 (已由 SkillInjector 注入)
+    skills_context = state.get("skills_context", "")
+    used_ids = state.get("used_skill_ids", [])
+    
+    # 这里的 skills_context 已经是格式化好的 Prompt 字符串
+    if not skills_context:
+        logger.info("No specific skills found for this task.")
 
     export_id = str(uuid.uuid4())
     tenant_id = state.get("tenant_id") or "default_tenant"
@@ -1051,15 +1038,44 @@ async def generate_offline_course_package(state: TutorialState):
         generated_at=datetime.utcnow().isoformat() + "Z",
     )
 
-    # 4. 渲染为 HTML 并保存到磁盘
+    # 4. 渲染为 HTML 并保存到磁盘 (或上传到 S3)
     html = _render_offline_course_html(course_package)
     safe_user_id = "".join(ch for ch in (user_id or tenant_id or "unknown") if ch.isalnum() or ch in {"-", "_"})
-    export_dir = (Path.cwd() / "server" / "data" / "user_files" / safe_user_id).resolve()
-    export_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"tutorial_{export_id}.html"
-    file_path = (export_dir / filename).resolve()
-    file_path.write_text(html, encoding="utf-8")
-    relative_path = f"{safe_user_id}/{filename}"
+    
+    from server.core.storage import S3Client
+    s3_client = S3Client()
+    file_url = None
+    
+    if s3_client.enabled:
+        temp_dir = (Path.cwd() / "server" / "data" / "temp").resolve()
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"tutorial_{export_id}.html"
+        temp_file_path = temp_dir / filename
+        try:
+            temp_file_path.write_text(html, encoding="utf-8")
+            object_name = f"tutorials/{safe_user_id}/{filename}"
+            file_url = s3_client.upload_file(temp_file_path, object_name)
+        except Exception as e:
+            logger.error(f"Failed to upload tutorial to S3: {e}")
+        finally:
+            if temp_file_path.exists():
+                try:
+                    os.remove(temp_file_path)
+                except:
+                    pass
+
+    if file_url:
+        relative_path = file_url
+        logger.info(f"Tutorial uploaded to S3: {file_url}")
+    else:
+        # Fallback to local storage
+        export_dir = (Path.cwd() / "server" / "data" / "user_files" / safe_user_id).resolve()
+        export_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"tutorial_{export_id}.html"
+        file_path = (export_dir / filename).resolve()
+        file_path.write_text(html, encoding="utf-8")
+        relative_path = f"{safe_user_id}/{filename}"
+        logger.info(f"Tutorial saved locally: {file_path}")
 
     # 5. 保存记录到数据库
     try:
@@ -1094,6 +1110,38 @@ async def generate_offline_course_package(state: TutorialState):
             await session.commit()
     except Exception as e:
         logger.error(f"Failed to persist TutorialExport/AgentArtifact: {e}")
+
+    # 6. 将生成的教程保存为新技能 (Skill Self-Learning)
+    try:
+        skill_content_str = f"Course Title: {course_outline.title}\n"
+        skill_content_str += f"Topic: {course_outline.topic}\n"
+        skill_content_str += f"Target Audience: {course_outline.target_audience}\n\n"
+        skill_content_str += "Outline:\n"
+        
+        for mod in course_outline.modules:
+            skill_content_str += f"\nModule: {mod.title}\nGoal: {mod.goal}\n"
+            for lesson in mod.lessons:
+                # Get the detailed content if available
+                l_content = lessons.get(lesson.id)
+                if l_content:
+                    skill_content_str += f"  - Lesson: {lesson.title}\n"
+                    skill_content_str += f"    Objective: {lesson.objective}\n"
+                    skill_content_str += f"    Explanation: {l_content.plain_explanation[:200]}...\n"
+        
+        new_skill = SkillCreate(
+            name=f"Tutorial: {course_outline.title}",
+            description=f"Auto-generated tutorial on {course_outline.topic}",
+            category="tutorial",
+            level=1,
+            content=skill_content_str,
+            tags=["generated", "tutorial", course_outline.topic]
+        )
+        
+        await skill_service.create_skill(new_skill)
+        logger.info(f"Saved generated tutorial as new skill: {new_skill.name}")
+
+    except Exception as e:
+        logger.error(f"Failed to save generated tutorial as skill: {e}")
 
     download_url = f"/api/v1/agent/tutorial_exports/{export_id}/download"
     
@@ -1137,12 +1185,13 @@ async def collect_feedback(state: TutorialState):
     return {}
 
 tutorial_graph = StateGraph(TutorialState)
-tutorial_graph.add_node("memory_load", memory_node)
+tutorial_graph.add_node("load_skills", skill_injector.load_skills_context)
 tutorial_graph.add_node("analyze_intent", analyze_intent)
 tutorial_graph.add_node("generate_content", generate_offline_course_package)
 tutorial_graph.add_node("collect_feedback", collect_feedback)
-tutorial_graph.set_entry_point("memory_load")
-tutorial_graph.add_edge("memory_load", "analyze_intent")
+
+tutorial_graph.set_entry_point("load_skills")
+tutorial_graph.add_edge("load_skills", "analyze_intent")
 tutorial_graph.add_edge("analyze_intent", "generate_content")
 tutorial_graph.add_edge("generate_content", "collect_feedback")
 tutorial_graph.add_edge("collect_feedback", END)

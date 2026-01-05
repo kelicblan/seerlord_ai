@@ -13,4 +13,6 @@ class RequirementAnalystState(TypedDict):
     tenant_id: str
     user_id: str
     memory_context: str
+    skills_context: Optional[str]
+    used_skill_ids: Optional[List[str]]
     total_tokens: int

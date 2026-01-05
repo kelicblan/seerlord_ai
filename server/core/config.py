@@ -98,6 +98,25 @@ class Settings(BaseSettings):
     # 插件目录
     PLUGIN_DIR: str = Field("server/plugins", description="Directory containing plugins")
 
+    # Email Server Configuration
+    EMAIL_SERVER_SMTP_HOST: str | None = Field(None, description="SMTP Server Host")
+    EMAIL_SERVER_SMTP_PORT: int = Field(465, description="SMTP Server Port")
+    EMAIL_SERVER_EMAIL_ADDRESS: str | None = Field(None, description="Email Address for sending")
+    EMAIL_SERVER_PASSWORD: str | None = Field(None, description="Email Password")
+
+    # S3 Configuration (MinIO)
+    S3_ENDPOINT: str | None = Field(None, description="S3 Endpoint URL")
+    S3_ACCESS_KEY_ID: str | None = Field(None, description="S3 Access Key ID")
+    S3_SECRET_ACCESS_KEY: str | None = Field(None, description="S3 Secret Access Key")
+    S3_BUCKET_NAME: str = Field("seerlord-files", description="S3 Bucket Name")
+    S3_FORCE_PATH_STYLE: bool = Field(True, description="Force path style for S3 (MinIO)")
+
+    @field_validator("S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET_NAME")
+    def strip_quotes(cls, v):
+        if v and isinstance(v, str):
+            return v.strip("'").strip('"').strip()
+        return v
+
     # LangSmith / LangChain Tracing
     LANGCHAIN_TRACING_V2: bool = Field(False, description="Enable LangChain Tracing")
     LANGCHAIN_API_KEY: str | None = Field(None, description="LangChain API Key")

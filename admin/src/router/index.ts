@@ -36,6 +36,12 @@ const router = createRouter({
           meta: { title: 'common.nav_agent_mgmt' }
         },
         {
+          path: 'automation',
+          name: 'automation',
+          component: () => import('@/views/Automation.vue'),
+          meta: { title: 'common.nav_automation' }
+        },
+        {
           path: 'mcp',
           name: 'mcp',
           component: () => import('@/views/MCPManage.vue'),

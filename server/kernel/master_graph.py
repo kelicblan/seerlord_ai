@@ -35,7 +35,6 @@ class MasterPlan(BaseModel):
     tasks: List[Task] = Field(description="List of tasks to execute in order.")
     original_request: str = Field(description="The original user request.")
 
-from server.memory.manager import MemoryManager
 
 # =============================================================================
 # State Definition
@@ -44,6 +43,7 @@ from server.memory.manager import MemoryManager
 class MasterState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], add_messages]
     # Context State
+    memory_context: str
     session_id: str
     tenant_id: str
     user_id: str
@@ -326,22 +326,8 @@ async def planner_node(state: MasterState, config: RunnableConfig) -> Dict[str, 
              "agent_name": agent_name
          }
 
-    # Retrieve Relevant Memories
-    memories = []
-    try:
-        mem_mgr = await MemoryManager.get_instance()
-        if user_input:
-            context_result = await mem_mgr.retrieve_context(
-                query=user_input,
-                user_id=state.get("user_id", "default_user")
-            )
-            memories = context_result.get("memories", [])
-    except Exception as e:
-        logger.error(f"Memory retrieval failed: {e}")
-    
-    memory_context = ""
-    if memories:
-        memory_context = "\nRelevant Memories:\n" + "\n".join([f"- {m}" for m in memories]) + "\n"
+    # Retrieve Relevant Memories (Injected by Middleware)
+    memory_context = state.get("memory_context", "")
 
     plugins = registry.plugins
     
@@ -489,31 +475,7 @@ async def final_answer_node(state: MasterState) -> Dict[str, Any]:
         # For now, we assume the last plugin (e.g. 'Write Report') produced the final output.
         pass
         
-    # Save Interaction to Memory
-    try:
-        memory_manager = await MemoryManager.get_instance()
-        messages = state.get("messages", [])
-        # Find the last human message and the last AI message
-        # Note: messages might be mixed. We want the most recent pair.
-        last_human = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
-        last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
-        
-        if last_human and last_ai:
-            agent_name = state.get("agent_name", "default_agent")
-            session_id = state.get("session_id", "unknown_session")
-            
-            await memory_manager.add_interaction(
-                user_input=last_human.content,
-                ai_response=last_ai.content,
-                user_id=state.get("user_id", "default_user"),
-                metadata={
-                    "agent_name": agent_name,
-                    "session_id": session_id,
-                    "tenant_id": state.get("tenant_id", "default_tenant")
-                }
-            )
-    except Exception as e:
-        logger.error(f"Failed to save memory: {e}")
+    # Memory saving is now handled by API Middleware
 
     return {} # No changes
 

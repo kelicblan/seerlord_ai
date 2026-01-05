@@ -1,6 +1,6 @@
 from langchain_core.runnables import Runnable
 from server.kernel.interface import AgentPlugin
-from server.config_engine.builder import AgentBuilder
+from .graph import app
 import os
 
 class NewsReporterPlugin(AgentPlugin):
@@ -13,19 +13,18 @@ class NewsReporterPlugin(AgentPlugin):
 
     @property
     def name_zh(self) -> str:
-        return "新闻资讯"
+        return "私人情报官"
 
     @property
     def description(self) -> str:
-        return "Searches and summarizes global major news from the last 24 hours."
+        return "Fetches real-time tech news from NewsMinimalist, translates, and emails a briefing."
+
+    @property
+    def enable_skills(self) -> bool:
+        return True
 
     def get_graph(self) -> Runnable:
-        if not self._graph:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(current_dir, "config.yaml")
-            builder = AgentBuilder(agents_path=config_path, tasks_path=config_path)
-            self._graph = builder.build()
-        return self._graph
+        return app
 
     def get_critique_instructions(self) -> str:
         return (

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Any, Dict, Optional, List
 import json
 import asyncio
+import yaml
 from loguru import logger
 from langchain_core.load.dump import dumpd
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +20,26 @@ from server.core.config import settings
 from server.models.user import User
 from server.models.llm_trace import LLMTrace
 from server.models.tutorial_export import TutorialExport
+from server.memory.manager import MemoryManager
 from datetime import datetime
 from pathlib import Path
 
 router = APIRouter()
+
+# Helper to load config values
+def load_plugin_config_values(plugin_id: str) -> Dict[str, Any]:
+    try:
+        plugin_dir = Path(settings.PLUGIN_DIR)
+        dir_name = registry.get_plugin_dir(plugin_id) or plugin_id
+        config_path = plugin_dir / dir_name / "config.yaml"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+                # We are interested in 'configurable' section
+                return data.get("configurable", {})
+    except Exception as e:
+        logger.error(f"Failed to load config for {plugin_id}: {e}")
+    return {}
 
 # Optional Auth Dependency
 async def get_current_user_optional(
@@ -79,10 +96,56 @@ async def stream_events(
             config["configurable"] = {}
         config["configurable"]["tenant_id"] = tenant_id
         
+        # FIX: Ensure user_id is passed even if not authenticated
+        # Trust input provided user_id or fall back to default
+        user_id = input_data.get("user_id", "default_user")
+        input_data["user_id"] = user_id
+        config["configurable"]["user_id"] = user_id
+        
         if "metadata" not in config:
             config["metadata"] = {}
         config["metadata"]["tenant_id"] = tenant_id
     
+    # [Middleware] Memory Loading (Pre-Execution)
+    # Check config for memory settings. Default enabled=True unless explicitly disabled.
+    memory_config = config.get("configurable", {}).get("memory", {})
+    memory_enabled = memory_config.get("enabled", True)
+
+    if memory_enabled:
+        try:
+            mem_mgr = await MemoryManager.get_instance()
+            # Extract query from messages
+            msgs = input_data.get("messages", [])
+            query = ""
+            if isinstance(msgs, list) and msgs:
+                # Find last human message
+                for m in reversed(msgs):
+                    if isinstance(m, dict) and m.get("type") == "human":
+                        query = m.get("content", "")
+                        break
+                    elif hasattr(m, "type") and m.type == "human":
+                        query = m.content
+                        break
+            
+            if query:
+                user_id_for_mem = input_data.get("user_id", "default_user")
+                context_result = await mem_mgr.retrieve_context(query=query, user_id=user_id_for_mem)
+                
+                # Format context
+                parts = []
+                if context_result.get("profile"):
+                    parts.append("### User Profile:")
+                    parts.extend([f"- {p}" for p in context_result["profile"]])
+                if context_result.get("memories"):
+                    parts.append("\n### Relevant Past Events:")
+                    parts.extend([f"- {m}" for m in context_result["memories"]])
+                
+                memory_context = "\n".join(parts)
+                input_data["memory_context"] = memory_context
+                logger.info(f"Memory injected for user {user_id_for_mem}")
+        except Exception as e:
+            logger.error(f"Memory loading failed: {e}")
+
     logger.info(f"Received Input: {input_data}")
     logger.info(f"Received Config: {config}")
 
@@ -93,6 +156,17 @@ async def stream_events(
     if target_plugin and target_plugin != "auto":
         plugin = registry.get_plugin(target_plugin)
         if plugin:
+            # Load static config from disk
+            disk_config = load_plugin_config_values(target_plugin)
+            if disk_config:
+                if "configurable" not in config:
+                    config["configurable"] = {}
+                # Merge: Runtime overrides disk if key exists (standard behavior), 
+                # but here runtime is likely empty for these keys, so disk fills them.
+                for k, v in disk_config.items():
+                    if k not in config["configurable"]:
+                        config["configurable"][k] = v
+            
             logger.info(f"Targeting plugin directly: {target_plugin}")
             app = plugin.get_graph()
         else:
@@ -135,6 +209,7 @@ async def stream_events(
     async def event_generator():
         # Track active runs for tracing
         active_traces = {} # run_id -> trace_dict
+        final_ai_response = "" # Track final response for memory
         
         try:
             # LangGraph astream_events yields events
@@ -157,6 +232,14 @@ async def stream_events(
                         pass 
                     elif event_type == "on_chat_model_end":
                         logger.info(f"Stream: Chat Model End (RunID: {serializable_event.get('run_id')})")
+                        # Capture output for memory
+                        try:
+                            data_payload = serializable_event.get("data", {})
+                            output = data_payload.get("output", {})
+                            if isinstance(output, dict) and output.get("content"):
+                                final_ai_response = output.get("content")
+                        except:
+                            pass
                     elif event_type == "on_tool_start":
                         logger.info(f"Stream: Tool Start (Name: {serializable_event.get('name')})")
                     elif event_type == "on_tool_end":
@@ -229,6 +312,29 @@ async def stream_events(
 
                 except Exception as json_err:
                     logger.error(f"Failed to serialize event: {json_err}")
+            
+            # [Middleware] Memory Saving (Post-Execution)
+            memory_auto_save = memory_config.get("auto_save", True)
+            memory_read_only = memory_config.get("read_only", False)
+            
+            # We need query variable from outer scope
+            # Ensure final_ai_response is not empty
+            if memory_enabled and memory_auto_save and not memory_read_only and final_ai_response and query:
+                try:
+                    # Re-get instance to be safe (though it's singleton)
+                    mem_mgr = await MemoryManager.get_instance()
+                    await mem_mgr.add_interaction(
+                        user_input=query,
+                        ai_response=final_ai_response,
+                        user_id=input_data.get("user_id", "default_user"),
+                        metadata={
+                            "tenant_id": tenant_id,
+                            "source": target_plugin or "master_graph"
+                        }
+                    )
+                    logger.info("Interaction saved to memory.")
+                except Exception as mem_err:
+                    logger.error(f"Failed to save memory: {mem_err}")
                     
         except Exception as e:
             logger.error(f"Error in stream_events: {e}")
@@ -272,6 +378,11 @@ async def download_tutorial_export(
     raw_path = (export.file_path or "").strip()
     if not raw_path:
         raise HTTPException(status_code=404, detail="Export file missing")
+
+    # Handle S3/Remote URLs
+    if raw_path.startswith("http://") or raw_path.startswith("https://"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=raw_path)
 
     p = Path(raw_path)
     if p.is_absolute():

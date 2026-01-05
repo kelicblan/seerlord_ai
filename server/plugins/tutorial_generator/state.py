@@ -11,6 +11,7 @@ class TutorialState(TypedDict):
     tenant_id: str
     user_id: str
     memory_context: str
+    skills_context: Optional[str]
     
     tutorial_result: Optional[TutorialSchema]
     detailed_content: Optional[str] # Store the final generated content

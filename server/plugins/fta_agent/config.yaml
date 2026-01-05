@@ -25,3 +25,8 @@ tasks:
     expected_output: "A critique score (1-10) and specific suggestions for improvement."
     agent: "fta_critic"
     context: ["analyze_root_cause"]
+
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

@@ -1,15 +1,18 @@
 from typing import TypedDict, List, Annotated, Optional
 import operator
-from langchain_core.messages import BaseMessage, AIMessage, SystemMessage
+from langchain_core.messages import BaseMessage, AIMessage, SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from server.core.llm import get_llm
 from server.kernel.mcp_manager import mcp_manager
+from server.kernel.registry import registry
 from server.memory.tools import memory_node
 from loguru import logger
 import uuid
 from server.core.database import SessionLocal
 from server.models.artifact import AgentArtifact
+from server.kernel.skill_integration import skill_injector
 
 # Define State
 class NewsState(TypedDict):
@@ -18,45 +21,45 @@ class NewsState(TypedDict):
     tenant_id: str
     user_id: str
     memory_context: str
+    skills_context: Optional[str]
+    used_skill_ids: Optional[List[str]]
     
     news_content: str
-    critique_count: int
     latest_summary: str
-
-# Define Structured Output for Critique
-class CritiqueResult(BaseModel):
-    score: int = Field(description="Score from 1 to 10. 10 is perfect.")
-    critique: str = Field(description="Detailed critique of the summary.")
-    suggestions: str = Field(description="Specific suggestions for improvement.")
 
 # Node: Search News
 async def search_node(state: NewsState):
     """
-    Searches for global news using the MCP tool.
+    Fetches tech news from NewsMinimalist using web-tools (Headless mode).
     """
-    # Try to get the tool from MCP Manager
-    # Prefer 'bingcn' (User requested), fallback to 'news_service'
-    tool = mcp_manager.get_tool("bingcn", "bing_search")
+    # Use the new 'web-tools' MCP tool - PREFER HEADLESS for JS sites
+    tool = mcp_manager.get_tool("web-tools", "fetch_headless_content")
     
     if not tool:
-        logger.warning("MCP Tool 'bing_search' not found in 'bingcn'. Falling back to 'news_service'.")
-        tool = mcp_manager.get_tool("news_service", "search_global_news")
-    
+        # Fallback to standard fetch if headless not available
+        logger.warning("MCP Tool 'fetch_headless_content' not found, falling back to 'fetch_url_content'")
+        tool = mcp_manager.get_tool("web-tools", "fetch_url_content")
+
     if not tool:
-        logger.error("No news search tool available.")
-        return {"news_content": "Error: News search tool is unavailable (MCP connection failed or tool missing)."}
+        logger.error("No fetch tools found in 'web-tools'.")
+        return {"news_content": "Error: Web fetch tool is unavailable."}
 
     # Call the tool
     try:
-        # bing_search usually takes 'query' or 'keywords'. We use 'query' as a safe bet for now.
-        # If it's the python news_service, it also takes 'query'.
-        # We search for recent major news.
-        news_results = await tool.ainvoke({"query": "24小时内全球重大新闻"})
+        # Note: from=2&to=10 captures more items (lower significance threshold) to meet the target of ~50 items.
+        # To ensure we get enough items, we use headless browser with scrolling (implemented in web-tools).
+        url = "https://www.newsminimalist.com/?category=all&from=2&to=10&sort=latest"
+        logger.info(f"Fetching news from {url}...")
+        
+        # Pass wait_for_selector if using headless to ensure news items load
+        # .news-item or similar common classes, but generic wait is safer if unknown
+        news_content = await tool.ainvoke({"url": url})
+        
     except Exception as e:
-        logger.error(f"Error calling MCP tool: {e}")
-        return {"news_content": f"Error searching news: {str(e)}"}
+        logger.error(f"Error fetching news: {e}")
+        return {"news_content": f"Error fetching news: {str(e)}"}
     
-    return {"news_content": news_results, "critique_count": 0}
+    return {"news_content": news_content}
 
 # Node: Summarize News
 async def summarize_node(state: NewsState):
@@ -64,107 +67,37 @@ async def summarize_node(state: NewsState):
     Summarizes the news content using LLM.
     """
     news_content = state.get("news_content", "")
-    current_summary = state.get("latest_summary", "")
     
-    # 提取反馈历史
-    messages = state.get("messages", [])
-    feedback_history = []
-    for msg in reversed(messages):
-        if hasattr(msg, 'content') and "[Critic Feedback]" in msg.content:
-            feedback_history.append(msg.content)
-            if len(feedback_history) >= 2: break
-            
-    feedback_context = ""
-    if feedback_history:
-        feedback_context = "\n\n[Previous Feedback to Address]:\n" + "\n".join(feedback_history)
+    if not news_content or "Error fetching" in news_content:
+        logger.warning(f"News content is empty or error: {news_content[:100]}")
+        msg = "⚠️ **无法获取最新的科技新闻数据**\n\n数据源暂时无法访问（可能由于网络波动或访问频率限制）。请稍后再试。\n\n"
+        if "429" in news_content:
+            msg += "*(错误代码: 429 Too Many Requests)*"
+        return {"latest_summary": msg, "messages": [AIMessage(content=msg)]}
 
-    if not news_content:
-        return {"messages": [AIMessage(content="Sorry, I couldn't find any major global news in the last 24 hours.")]}
-
-    memory_context = state.get("memory_context", "")
+    skills = state.get("skills_context", "")
 
     base_prompt = (
-        "You are a professional news editor for 'SeerLord AI'.\n"
-        "Your task is to summarize the provided global news articles into a concise, engaging Daily Briefing.\n"
+        "You are a 'Private Intelligence Officer' for SeerLord AI.\n"
+        "Your task is to parse the raw text from NewsMinimalist and generate a clean, Chinese briefing.\n"
+        "Raw content usually contains news items with titles, scores, and sources.\n\n"
+        f"[Expert Guidelines]:\n{skills}\n\n"
         "Requirements:\n"
-        "1. Use Markdown format.\n"
-        "2. Group news by topic if possible.\n"
-        "3. Use emojis for each section.\n"
-        "4. Include the source and a link for each item if available.\n"
-        "5. Keep it under 1000 words.\n"
-        "6. Language: Chinese (Simplified).\n"
-        f"{memory_context}\n"
-        f"{feedback_context}\n\n"
+        "1. Extract AT LEAST 50 technology news items. Do not stop at 10. If there are fewer than 50, extract all of them.\n"
+        "2. Translate titles to Simplified Chinese.\n"
+        "3. Format each item strictly as: `[Chinese Title](original_link) (Source) - Time`.\n"
+        "   - If 'Time' is not available, omit it or use 'Recently'.\n"
+        "   - If 'Source' is not available, omit it.\n"
+        "4. DO NOT add summary text under items.\n"
+        "5. Group them under a header like '## 🚀 Tech Intelligence'.\n"
+        "6. Maintain a professional, objective tone.\n"
+        f"Raw News Data:\n{news_content[:80000]}" # Increased limit to capture ~50 items
     )
-
-    if current_summary:
-        # We are revising (Local Loop or Global Loop)
-        prompt = (
-            f"{base_prompt}"
-            f"Previous Summary:\n{current_summary}\n\n"
-            "Please revise the summary based on the feedback."
-        )
-    else:
-        # First draft
-        prompt = (
-            f"{base_prompt}"
-            f"Raw News Data:\n{news_content}"
-        )
 
     llm = get_llm(temperature=0.5)
-    response = await llm.ainvoke([SystemMessage(content=prompt)])
+    response = await llm.ainvoke([SystemMessage(content=base_prompt)])
     
     return {"latest_summary": response.content, "messages": [response]}
-
-# Node: Critique News
-async def critique_node(state: NewsState):
-    """
-    Critiques the generated summary.
-    """
-    summary = state.get("latest_summary", "")
-    if not summary:
-        return {"critique_feedback": "No summary generated.", "score": 0}
-
-    llm = get_llm(temperature=0.2)
-    structured_llm = llm.with_structured_output(CritiqueResult)
-
-    prompt = (
-        "You are a strict Senior Editor.\n"
-        "Review the following News Briefing.\n"
-        "Check for:\n"
-        "1. Clarity and flow.\n"
-        "2. Proper formatting (Markdown, emojis).\n"
-        "3. Completeness (did it miss major points from raw data? - Hard to know without raw data, but check internal consistency).\n"
-        "4. Professional tone.\n\n"
-        f"Briefing:\n{summary}"
-    )
-
-    try:
-        result = await structured_llm.ainvoke([SystemMessage(content=prompt)])
-        score = result.score
-        feedback = f"Score: {score}/10. Critique: {result.critique}. Suggestions: {result.suggestions}"
-    except Exception as e:
-        logger.error(f"Critique failed: {e}")
-        score = 10 # Assume good if critique fails to avoid loops
-        feedback = "Critique failed."
-
-    return {
-        "critique_feedback": feedback,
-        "score": score,
-        "critique_count": state.get("critique_count", 0) + 1
-    }
-
-# Conditional Logic
-def should_revise(state: NewsState):
-    """
-    Decides whether to revise or finish.
-    """
-    score = state.get("score", 0)
-    count = state.get("critique_count", 0)
-    
-    if score >= 8 or count >= 3:
-        return "end"
-    return "revise"
 
 # Finalize Node (Optional, just to wrap up)
 async def finalize_node(state: NewsState):
@@ -190,29 +123,59 @@ async def finalize_node(state: NewsState):
             logger.error(f"Failed to save content artifact: {e}")
     return {"messages": [AIMessage(content=summary)]}
 
+# Node: Email News
+async def email_node(state: NewsState, config: RunnableConfig):
+    """
+    Sends the generated summary via email using _mail_service_ system agent.
+    """
+    summary = state.get("latest_summary") or ""
+    if not summary:
+        logger.warning("No summary to email.")
+        return {}
+
+    logger.info("Calling _mail_service_ to send email...")
+
+    # Get the mail service plugin
+    mail_plugin = registry.get_plugin("_mail_service_")
+    if not mail_plugin:
+        logger.error("System Agent '_mail_service_' not found.")
+        return {}
+
+    try:
+        # Call the mail agent graph
+        mail_app = mail_plugin.get_graph()
+        
+        # Construct request for the mail agent
+        # We explicitly state the target agent ID is 'news_reporter' so it looks up the config
+        prompt = (
+            "Please send this news summary via email.\n"
+            "Target Agent ID: news_reporter\n"
+            "Subject: SeerLord AI: 24小时全球重大新闻简报\n"
+            f"Body:\n{summary}"
+        )
+        
+        await mail_app.ainvoke({"messages": [HumanMessage(content=prompt)]})
+        logger.info("Email request sent to _mail_service_.")
+        
+    except Exception as e:
+        logger.error(f"Failed to invoke mail service: {e}")
+        
+    return {}
+
 # Build Graph
 graph_builder = StateGraph(NewsState)
 
-graph_builder.add_node("memory_load", memory_node)
+graph_builder.add_node("load_skills", skill_injector.load_skills_context)
 graph_builder.add_node("search_news", search_node)
 graph_builder.add_node("summarize_news", summarize_node)
-graph_builder.add_node("critique_news", critique_node)
+graph_builder.add_node("email_news", email_node)
 graph_builder.add_node("finalize_news", finalize_node)
 
-graph_builder.add_edge(START, "memory_load")
-graph_builder.add_edge("memory_load", "search_news")
+graph_builder.add_edge(START, "load_skills")
+graph_builder.add_edge("load_skills", "search_news")
 graph_builder.add_edge("search_news", "summarize_news")
-graph_builder.add_edge("summarize_news", "critique_news")
-
-graph_builder.add_conditional_edges(
-    "critique_news",
-    should_revise,
-    {
-        "revise": "summarize_news",
-        "end": "finalize_news"
-    }
-)
-
+graph_builder.add_edge("summarize_news", "email_news")
+graph_builder.add_edge("email_news", "finalize_news")
 graph_builder.add_edge("finalize_news", END)
 
 # Compile Graph

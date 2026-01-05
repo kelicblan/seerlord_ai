@@ -6,19 +6,21 @@
         "../mcp_services/news/server.py"
       ]
     },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "web-tools": {
+      "command": "python",
+      "args": [
+        "../mcp_services/web_tools/server.py"
+      ]
+    },
     "bingcn": {
       "command": "npx",
       "args": [
         "-y",
         "bing-cn-mcp"
-      ]
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "."
       ]
     },
     "markdownify": {
@@ -34,7 +36,12 @@
       "command": "mcp_services/mdtofiles/.venv/Scripts/python",
       "args": [
         "../mcp_services/mdtofiles/server.py"
-      ]
+      ],
+      "platforms": {
+        "linux": {
+          "command": "mcp_services/mdtofiles/.venv/bin/python"
+        }
+      }
     },
     "mcp-server-chart": {
       "command": "npx",
@@ -50,8 +57,19 @@
         "@peng-shawn/mermaid-mcp-server"
       ],
       "env": {
-        "CONTENT_IMAGE_SUPPORTED": "false",
-        "PUPPETEER_EXECUTABLE_PATH": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        "CONTENT_IMAGE_SUPPORTED": "false"
+      },
+      "platforms": {
+        "win32": {
+          "env": {
+            "PUPPETEER_EXECUTABLE_PATH": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+          }
+        },
+        "linux": {
+          "env": {
+            "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome"
+          }
+        }
       }
     },
     "smtp-email-server": {
@@ -66,18 +84,6 @@
         "MCP_EMAIL_SERVER_EMAIL_ADDRESS": "seerlord_agent@zohomail.cn",
         "MCP_EMAIL_SERVER_PASSWORD": "ke135246"
       }
-    },
-    "phone-mcp": {
-      "command": "uvx",
-      "args": [
-        "phone-mcp"
-      ]
-    },
-    "mcp-scholarly": {
-      "command": "uvx",
-      "args": [
-        "mcp-scholarly"
-      ]
     }
   }
 }

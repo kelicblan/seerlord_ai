@@ -115,15 +115,21 @@ def get_embeddings():
     else:
         raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {settings.EMBEDDING_PROVIDER}")
 
-def get_llm(temperature: float = 0.7, model: Optional[str] = None):
+def get_llm(temperature: float = 0.7, model: Optional[str] = None, use_full_modal: bool = False):
     """
     Factory function to get the configured LLM instance based on settings.
     
     Args:
         temperature: Sampling temperature.
         model: Optional override for the model name.
+        use_full_modal: If True, use FULL_MODAL_MODEL_ID instead of AGENT_LLM_ID
     """
-    db_model = get_active_model_config("AGENT_LLM_ID")
+    setting_key = "FULL_MODAL_MODEL_ID" if use_full_modal else "AGENT_LLM_ID"
+    db_model = get_active_model_config(setting_key)
+    # If full modal requested but not configured, fallback to default agent LLM
+    if use_full_modal and not db_model:
+        db_model = get_active_model_config("AGENT_LLM_ID")
+
     timeout = int(get_system_setting_value("LLM_TIMEOUT", settings.LLM_TIMEOUT))
 
     if db_model:

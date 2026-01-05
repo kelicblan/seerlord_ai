@@ -127,13 +127,30 @@ async def _generate_dashscope_native(api_key: str, base_url: str, model_name: st
     }
     
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload, headers=headers)
+        # Retry logic for submission (handle 429)
+        max_retries = 3
+        for attempt in range(max_retries):
+            resp = await client.post(url, json=payload, headers=headers)
+            
+            if resp.status_code == 429:
+                logger.warning(f"DashScope rate limited (429). Retrying in 5s... (Attempt {attempt+1}/{max_retries})")
+                await asyncio.sleep(5)
+                continue
+            
+            if resp.status_code in [400, 404]:
+                 logger.warning(f"DashScope submit failed with URL {url} (Status: {resp.status_code}). Trying standard endpoint.")
+                 # Only switch URL once
+                 if url != "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis":
+                     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+                     # Continue to next iteration to retry with new URL
+                     continue
+                 else:
+                     # If already on standard URL and failing, break
+                     break
+            
+            # If success or other error, break loop to handle below
+            break
         
-        if resp.status_code in [400, 404]:
-             logger.warning(f"DashScope submit failed with URL {url} (Status: {resp.status_code}). Trying standard endpoint.")
-             url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
-             resp = await client.post(url, json=payload, headers=headers)
-
         if resp.status_code != 200:
             logger.error(f"DashScope submit failed: {resp.status_code} - {resp.text}")
             raise RuntimeError(f"DashScope submit failed: {resp.text}")
@@ -180,10 +197,10 @@ async def _generate_dashscope_native(api_key: str, base_url: str, model_name: st
 
 def save_local_image(base64_str: str, user_id: str, suffix: str = "") -> str:
     """
-    Save base64 image to local disk and return absolute path.
+    Save base64 image to local temp directory and return absolute path.
     """
-    safe_user_id = "".join(ch for ch in (user_id or "unknown") if ch.isalnum() or ch in {"-", "_"})
-    directory = Path.cwd() / "server" / "data" / "user_files" / safe_user_id / "images"
+    # Use temp directory for intermediate assets
+    directory = (Path.cwd() / "server" / "data" / "temp" / "comic_assets").resolve()
     directory.mkdir(parents=True, exist_ok=True)
     
     file_id = str(uuid.uuid4())
@@ -344,8 +361,8 @@ def compose_comic_page(page: ComicPage, panel_images: Dict[int, str], user_id: s
         draw.text((x+5, y+5), str(panel.panel_number), font=desc_font, fill="white", anchor="mm")
 
     # Save Page
-    safe_user_id = "".join(ch for ch in (user_id or "unknown") if ch.isalnum() or ch in {"-", "_"})
-    comic_dir = Path.cwd() / "server" / "data" / "user_files" / safe_user_id / "comics"
+    # Use temp directory for composed pages
+    comic_dir = (Path.cwd() / "server" / "data" / "temp" / "comic_pages").resolve()
     comic_dir.mkdir(parents=True, exist_ok=True)
     
     file_id = str(uuid.uuid4())

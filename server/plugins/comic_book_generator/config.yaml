@@ -3,3 +3,8 @@ version: "1.0.0"
 enabled: true
 config:
   default_pages: 4
+
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

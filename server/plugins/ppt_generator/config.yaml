@@ -10,3 +10,8 @@ prompt: |
   如果用户给了具体内容，请整理为上述格式。
   
   生成 Markdown 后，请立即调用 `generate_ppt` 工具生成 PPT 文件。
+
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

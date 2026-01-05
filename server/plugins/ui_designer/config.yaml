@@ -1,0 +1,4 @@
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

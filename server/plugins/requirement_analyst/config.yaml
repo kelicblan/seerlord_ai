@@ -111,3 +111,8 @@ doc2_prompt: |
       测试修复            :c1, after m2, 5d
       上线                :milestone, m3, after c1, 1d
   ```
+
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

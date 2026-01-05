@@ -69,6 +69,16 @@
            <MarkdownRender :content="previewData.content || ''" />
         </div>
 
+        <!-- Component Type -->
+        <div v-else-if="previewData?.type === 'component'" class="w-full h-full overflow-auto bg-gray-50 p-4">
+           <div class="bg-white shadow-sm min-h-full p-4 rounded relative">
+             <component :is="dynamicComponent" v-bind="previewProps" v-if="dynamicComponent" />
+             <div v-else class="text-center text-gray-400 py-10">
+               {{ $t('common.loading') }}...
+             </div>
+           </div>
+        </div>
+
         <!-- File Type -->
         <div v-else-if="previewData?.type === 'file'" class="w-full h-full">
            <!-- HTML File: Iframe -->
@@ -127,8 +137,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, shallowRef, onErrorCaptured } from 'vue'
 import { useI18n } from 'vue-i18n'
+import * as Vue from 'vue'
 import { listArtifacts, previewArtifact, type AgentArtifact, type ArtifactPreview } from '@/api/artifact'
 import { getTenantApiKey } from '@/api/axios'
 import { ElMessage } from 'element-plus'
@@ -144,6 +155,9 @@ import VueOfficePptx from '@vue-office/pptx'
 import '@vue-office/docx/lib/index.css'
 import '@vue-office/excel/lib/index.css'
 import { getLocalizedText } from '@/lib/utils'
+import { loadModule } from 'vue3-sfc-loader'
+import * as LucideVueNext from 'lucide-vue-next'
+import * as ElementPlus from 'element-plus'
 
 const { t, locale } = useI18n()
 const loading = ref(false)
@@ -165,6 +179,9 @@ type OfficeKind = 'docx' | 'xlsx' | 'pptx' | 'pdf'
 const officeKind = ref<OfficeKind | null>(null)
 const officeSrc = ref<ArrayBuffer | null>(null)
 const officeRenderFailed = ref(false)
+const dynamicComponent = shallowRef<any>(null)
+const injectedStyles = ref<HTMLStyleElement[]>([])
+const previewProps = ref<Record<string, any>>({})
 
 const { plugins, fetchPlugins } = useAgent()
 
@@ -208,6 +225,77 @@ const getAgentName = (agentId: string) => {
 
 const formatTime = (time: string) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
+}
+
+/**
+ * 清理 Vue 代码，移除 Markdown 代码块标记，并修复常见的运行时错误
+ * @param code 原始代码字符串
+ * @returns 清理后的代码
+ */
+const cleanVueCode = (code: string) => {
+  let cleaned = code
+  // 1. 尝试提取 Markdown 代码块
+  const match = code.match(/```(?:vue|html|js|ts)?\s*([\s\S]*?)```/i)
+  if (match && match[1]) {
+    cleaned = match[1]
+  }
+
+  // 2. 确保包含基本的 SFC 标签，如果全是文本则尝试提取
+  if (!cleaned.includes('<template') && !cleaned.includes('<script')) {
+    // 尝试在全文中寻找标签块
+    const templateMatch = code.match(/<template[\s\S]*?<\/template>/i)
+    const scriptMatch = code.match(/<script[\s\S]*?<\/script>/i)
+    const styleMatch = code.match(/<style[\s\S]*?<\/style>/i)
+    
+    let parts = []
+    if (scriptMatch) parts.push(scriptMatch[0])
+    if (templateMatch) parts.push(templateMatch[0])
+    if (styleMatch) parts.push(styleMatch[0])
+    
+    if (parts.length > 0) {
+      cleaned = parts.join('\n')
+    }
+  }
+  
+  // 3. 终极 Hack: 替换 .trim() 为 ?.trim() 以防止 undefined 报错
+  // 这里的正则替换比较激进，假设所有 .trim() 调用前都可能为空
+  // 注意：这可能会破坏某些合法的逻辑，但在预览场景下，防崩优于正确
+  cleaned = cleaned.replace(/(\S+)\.trim\(\)/g, '$1?.trim()')
+  // 修复常见的 props.xxx.trim() 或 var.trim()
+  // 上面的正则可能匹配到 props.title.trim() -> props.title?.trim()，这是合法的 JS
+  
+  return cleaned
+}
+
+const generateMockProps = (component: any) => {
+  const props: Record<string, any> = {}
+  if (!component || !component.props) return props
+  
+  const compProps = component.props
+  
+  if (Array.isArray(compProps)) {
+    compProps.forEach(key => {
+      props[key] = 'Mock Data'
+    })
+  } else {
+    for (const key in compProps) {
+      const def = compProps[key]
+      if (def === String || (def && def.type === String)) {
+        props[key] = 'Mock String'
+      } else if (def === Number || (def && def.type === Number)) {
+        props[key] = 0
+      } else if (def === Boolean || (def && def.type === Boolean)) {
+        props[key] = false
+      } else if (def === Array || (def && def.type === Array)) {
+        props[key] = []
+      } else if (def === Object || (def && def.type === Object)) {
+        props[key] = {}
+      } else {
+        props[key] = null
+      }
+    }
+  }
+  return props
 }
 
 const handlePreview = async (item: AgentArtifact) => {
@@ -276,6 +364,61 @@ const handlePreview = async (item: AgentArtifact) => {
          ElMessage.error(t('plaza.preview') + ' ' + t('common.status_Error') + ': ' + e.message)
          // Fallback or just stop
          htmlIframeSrc.value = '' 
+       }
+    }
+
+    if (res.data.type === 'file' && isVueFile(res.data.filename)) {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+        const headers: HeadersInit = {}
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        const tenantKey = getTenantApiKey()
+        if (tenantKey) headers['X-API-Key'] = tenantKey
+
+        const response = await fetch(getDownloadUrl(item.id), { headers })
+        
+        if (!response.ok) {
+          throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+        }
+        
+        const text = await response.text()
+        const cleanedText = cleanVueCode(text)
+        
+        // 检查是否包含有效的 Vue SFC 结构
+        if (!cleanedText.includes('<template') && !cleanedText.includes('<script')) {
+          throw new Error(t('plaza.invalid_vue_code'))
+        }
+
+        // Load module
+        const options = {
+          moduleCache: {
+            vue: Vue,
+            'lucide-vue-next': LucideVueNext,
+            // 添加 Element Plus 支持，确保生成的组件可以使用 el- 组件
+            'element-plus': ElementPlus
+          },
+          getFile: () => Promise.resolve(cleanedText),
+          addStyle: (textContent: string) => {
+            const style = document.createElement('style')
+            style.textContent = textContent
+            document.head.appendChild(style)
+            injectedStyles.value.push(style)
+          },
+        }
+
+        const resModule = await loadModule('/component.vue', options)
+        const component = resModule.default || resModule
+        
+        previewProps.value = generateMockProps(component)
+        dynamicComponent.value = component
+
+        previewData.value = {
+          ...res.data,
+          type: 'component',
+        }
+      } catch (e: any) {
+         console.error('Vue Preview download failed:', e)
+         ElMessage.error(t('plaza.preview') + ' ' + t('common.status_Error') + ': ' + e.message)
        }
     }
   } catch (error) {
@@ -350,6 +493,11 @@ const isHtmlFile = (filename?: string) => {
   return filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')
 }
 
+const isVueFile = (filename?: string) => {
+  if (!filename) return false
+  return filename.toLowerCase().endsWith('.vue')
+}
+
 const getOfficeKind = (filename?: string): OfficeKind | null => {
   if (!filename) return null
   const ext = filename.toLowerCase().split('.').pop()
@@ -368,6 +516,14 @@ const handleOfficeError = () => {
 
 watch(previewVisible, visible => {
   if (!visible) {
+    if (injectedStyles.value.length > 0) {
+      injectedStyles.value.forEach(style => {
+        if (style.parentNode) {
+          style.parentNode.removeChild(style)
+        }
+      })
+      injectedStyles.value = []
+    }
     previewData.value = null
     currentItem.value = null
     officeKind.value = null
@@ -384,6 +540,12 @@ watch(previewVisible, visible => {
 onMounted(() => {
   fetchArtifacts()
   fetchPlugins()
+})
+
+onErrorCaptured((err) => {
+  console.error('Captured Error in Preview:', err)
+  ElMessage.error(t('common.status_Error') + ': ' + err.message)
+  return false // Stop propagation
 })
 </script>
 

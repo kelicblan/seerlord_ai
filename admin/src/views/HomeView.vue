@@ -227,7 +227,7 @@ const formatFileSize = (bytes: number) => {
  */
 const isAllowedUploadFile = (file: File) => {
   const name = file.name.toLowerCase()
-  return name.endsWith('.docx') || name.endsWith('.pdf') || name.endsWith('.md') || name.endsWith('.txt')
+  return name.endsWith('.docx') || name.endsWith('.pdf') || name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp')
 }
 
 /**
@@ -538,7 +538,7 @@ const handleSend = async () => {
 
             <div class="bg-background border-t p-2 shrink-0 sticky bottom-0 relative">
               <input type="file" ref="fileInput" class="hidden" @change="handleFileUpload"
-                accept=".docx,.pdf,.md,.txt" />
+                accept=".docx,.pdf,.md,.txt,.jpg,.jpeg,.png,.gif" />
 
               <Transition name="upload-layer">
                 <div v-if="isUploadLayerOpen" class="absolute left-2 right-2 bottom-full mb-2 z-50">

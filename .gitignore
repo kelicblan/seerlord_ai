@@ -66,8 +66,20 @@ logs/
 # Version Control
 .svn/
 readme.txt
-Arch_Docs/
-
+论文/
 Temp_Files/
-test_image_gen.png
+
+# User Data
+server/data/temp/
+server/data/user_files/
+server/data/uploads/
+server/data/comic_assets/
+server/data/comics/
+server/data/comic_pages/
+
+# Trae IDE
 .trae/
+
+# Other temporary files
+test_image_gen.png
+static/

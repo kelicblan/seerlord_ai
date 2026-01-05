@@ -7,10 +7,10 @@ from loguru import logger
 
 from server.core.config import settings
 from server.core.llm import get_llm
-from server.memory.manager import MemoryManager
 from server.memory.tools import memory_node
 from .state import FTAState, FTANode
 from .tools import nodes_to_plantuml
+from server.kernel.skill_integration import skill_injector
 
 # 定义 LLM 输出结构
 class CauseNode(BaseModel):
@@ -101,31 +101,19 @@ async def root_cause_analysis(state: FTAState):
     if feedback_history:
         feedback_context = "\n\n[Previous Feedback to Address]:\n" + "\n".join(feedback_history)
 
-    # Memory / RAG Context Retrieval
-    rag_context = ""
-    try:
-        manager = await MemoryManager.get_instance()
-        # Search for context relevant to the current event
-        # Use retrieve_context which handles profile + facts
-        context_dict = await manager.retrieve_context(query=current_node.label, user_id=state.get("user_id"))
-        
-        parts = []
-        if context_dict["memories"]:
-            parts.extend([f"- {m}" for m in context_dict["memories"]])
-            
-        if parts:
-            rag_context = "\n\n[Relevant Historical Knowledge]:\n" + "\n".join(parts)
-
-    except Exception as e:
-        logger.warning(f"Memory Retrieval failed: {e}")
-        
-    global_memory = state.get("memory_context", "")
+    # Memory Context (Injected by Middleware)
+    memory_context = state.get("memory_context", "")
+    
+    skills = state.get("skills_context", "")
+    expert_context = ""
+    if skills:
+        expert_context = f"\n[Expert Guidelines]:\n{skills}\n"
 
     system_prompt = (
         f"You are an expert in Fault Tree Analysis (FTA). "
         f"Analyze the event: '{current_node.label}'. "
-        f"{global_memory}\n"
-        f"{rag_context}"
+        f"{memory_context}\n"
+        f"{expert_context}"
         "Identify the immediate direct causes. "
         "Classify them as 'intermediate' (needs further analysis) or 'basic_event' (root cause). "
         "Determine if the relationship is OR or AND."
@@ -291,6 +279,7 @@ def revision_check(state: FTAState):
 # 构建图
 workflow = StateGraph(FTAState)
 
+workflow.add_node("load_skills", skill_injector.load_skills_context)
 workflow.add_node("memory_load", memory_node)
 workflow.add_node("initialize", initialize_analysis)
 workflow.add_node("analyze", root_cause_analysis)
@@ -298,7 +287,8 @@ workflow.add_node("critique_tree", critique_tree)
 workflow.add_node("revise_tree", revise_tree)
 workflow.add_node("finalize", finalize_result)
 
-workflow.set_entry_point("memory_load")
+workflow.set_entry_point("load_skills")
+workflow.add_edge("load_skills", "memory_load")
 workflow.add_edge("memory_load", "initialize")
 workflow.add_edge("initialize", "analyze")
 

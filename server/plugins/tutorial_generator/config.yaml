@@ -24,3 +24,8 @@ tasks:
     expected_output: "A detailed markdown tutorial or learning plan."
     agent: "content_generator"
     context: ["analyze_request"]
+
+configurable:
+  memory:
+    enabled: true
+    auto_save: true

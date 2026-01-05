@@ -37,6 +37,10 @@ class TutorialPlugin(AgentPlugin):
             "- Must include estimated time for each section."
         )
 
+    @property
+    def enable_skills(self) -> bool:
+        return True
+
 # Export the plugin instance
 plugin = TutorialPlugin()
 

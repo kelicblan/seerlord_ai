@@ -19,6 +19,8 @@ class FTAState(TypedDict):
     tenant_id: str
     user_id: str
     memory_context: str
+    skills_context: Optional[str]
+    used_skill_ids: Optional[List[str]]
     
     tree_nodes: List[FTANode]
     processing_queue: List[str] # 待分析的节点 ID 列表

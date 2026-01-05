@@ -12,7 +12,11 @@ class PPTGeneratorPlugin(AgentPlugin):
 
     @property
     def description(self) -> str:
-        return "分析 Markdown 内容并自动生成 PPT 演示文稿"
+        return "Generates PowerPoint (PPTX) presentations from a topic or outline."
+
+    @property
+    def enable_skills(self) -> bool:
+        return True
 
     def get_graph(self):
         return app

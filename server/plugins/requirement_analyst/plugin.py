@@ -14,6 +14,10 @@ class RequirementAnalystPlugin(AgentPlugin):
     def description(self) -> str:
         return "上传需求文档，自动生成《项目需求规格说明书》和《系统开发指导手册》"
 
+    @property
+    def enable_skills(self) -> bool:
+        return True
+
     def get_graph(self):
         return app
 

@@ -1,202 +1,271 @@
-
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Union
+from loguru import logger
 from pydantic import BaseModel, Field
-import json
 import uuid
 from datetime import datetime
+from sqlalchemy import select
 
-# --- Data Models (Mirroring Frontend Skill Structure) ---
+from server.kernel.hierarchical_skills import HierarchicalSkill, SkillContent, SkillLevel
+from server.kernel.dynamic_skill_manager import dynamic_skill_manager
+from server.core.database import SessionLocal
+from server.db.models import Skill as SkillModel, SkillHistory
+
+# --- Legacy Data Models (For API Backward Compatibility) ---
 
 class SkillEvolutionRecord(BaseModel):
     """Record of a single evolution/update event for a skill."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     skill_id: str
     timestamp: float = Field(default_factory=lambda: datetime.now().timestamp() * 1000)
-    agent_id: str  # Which agent triggered this (e.g., 'tutorial_generator', 'skill_evolver')
+    agent_id: str  # Which agent triggered this
     change_description: str
-    diff: Optional[str] = None  # Text diff or JSON diff
-    version: int  # Version number
+    diff: Optional[str] = None
+    version: int
+    snapshot_content: Optional[str] = None # Added for frontend display
 
-class Skill(BaseModel):
-    id: str
+class SkillCreate(BaseModel):
+    """Schema for creating a new skill."""
     name: str
-    description: str
-    category: str
-    level: int  # 1: Specific, 2: Domain, 3: Meta
+    description: str = ""
+    category: str = "general"
+    level: int = 1  # 1: Specific, 2: Domain, 3: Meta
     parentId: Optional[str] = None
-    content: str  # The Prompt/Instruction
+    content: str = "" # The Prompt/Instruction
     tags: List[str] = []
-    history: List[SkillEvolutionRecord] = []  # Evolution History
+
+class Skill(SkillCreate):
+    """API Schema for Skill (Legacy Format)"""
+    id: str
+    history: List[SkillEvolutionRecord] = []
     version: int = 1
 
-# --- Mock Data Service ---
+# --- Service ---
 
 class SkillService:
+    """
+    Facade for the Skill System.
+    Connects to DynamicSkillManager (Real DB + Evolution) and provides legacy API support.
+    """
     def __init__(self):
-        # Initialize with the same mock data as in Frontend (SkillManage.vue)
-        self.skills: List[Skill] = [
-             # L3: 元技能
-            Skill(
-                id='101',
-                name='学习方法',
-                description='元认知学习策略 (L3) - 如何高效学习任何知识',
-                category='tutorial_agent',
-                level=3,
-                content="""[SYSTEM: META_INSTRUCTION]
-你现在不是一个百科全书，你是一个苏格拉底式的导师。
-你的核心目标不是“灌输信息”，而是“引导发现”。
-1. 不要直接给答案，要先用一个生活中的类比（Analogy）。
-2. 必须检查用户的认知偏差。
-3. 所有的解释必须遵循：What（是什么） -> Why（为什么学） -> How（怎么做）。""",
-                tags=['meta-learning', 'cognition'],
-                history=[
-                    SkillEvolutionRecord(
-                        skill_id='101',
-                        agent_id='system_init',
-                        change_description='Initial creation of Meta Strategy',
-                        timestamp=datetime.now().timestamp() * 1000 - 1000000,
-                        version=1
-                    )
-                ]
-            ),
-             # L2: 领域技能 (父级: 学习方法)
-            Skill(
-                id='102',
-                name='学语言',
-                description='语言习得通用模式 (L2) - 词汇/语法/听说的通用训练法',
-                category='tutorial_agent',
-                level=2,
-                parentId='101',
-                content="""[SYSTEM: DOMAIN_PATTERN_LANGUAGE]
-你正在教授语言知识。
-输出格式必须严格遵守以下 JSON 结构（方便前端渲染代码块）：
-{
-  "concept": "概念名称",
-  "analogy": "用物理世界的机械结构做类比",
-  "code_example": "一段不超过 10 行的最小可运行代码",
-  "pitfall": "新手最容易犯的一个错误（比如死循环）",
-  "exercise": "一个填空题"
-}
-Components:
-- Vocabulary: Spaced Repetition System
-- Grammar: Pattern Recognition
-- Listening: Immersion
-- Speaking: Shadowing""",
-                tags=['language-acquisition'],
-                history=[]
-            ),
-            # L1: 具体技能 (父级: 学语言)
-            Skill(
-                id='103',
-                name='学英语',
-                description='英语具体语法与词汇 (L1) - 针对英语特性的训练',
-                category='tutorial_agent',
-                level=1,
-                parentId='102',
-                content="""[SYSTEM: SPECIFIC_SKILL_ENGLISH]
-- Focus: SVO structure, Tenses, Articles
-- Resources: Oxford 3000, BBC Learning English
-- Practice: Daily conversation with AI""",
-                tags=['english'],
-                history=[]
-            ),
-             # 模拟进化机制派生的新技能
-             Skill(
-                id='104',
-                name='学德语',
-                description='德语基础入门 (L1) - 由"学语言"派生',
-                category='tutorial_agent',
-                level=1,
-                parentId='102',
-                content="""[Specific-Skill: German]
-- Focus: Cases (Nominative, Accusative, Dative, Genitive), Genders
-- Resources: DW Deutsch, Nicos Weg""",
-                tags=['german', 'derived'],
-                history=[
-                    SkillEvolutionRecord(
-                        skill_id='104',
-                        agent_id='skill_evolver',
-                        change_description='Derived from "学语言" pattern',
-                        timestamp=datetime.now().timestamp() * 1000 - 500000,
-                        version=1
-                    )
-                ]
-            ),
-             # 编程相关的 L1 技能 (假设补充)
-            Skill(
-                id='201',
-                name='Python 循环',
-                description='Python For Loop 教学',
-                category='tutorial_agent',
-                level=1,
-                parentId='101', # 暂时挂在 L3 下，实际应该有 Coding L2
-                content="""[SYSTEM: SPECIFIC_TOPIC_PYTHON_FOR_LOOP]
-你在讲 Python 的 for 循环。
-1. 最佳类比：不要用“迭代器”，要用“工厂流水线”或“点名册”来比喻。
-2. 强调重点：for item in list，这里的 item 是一个临时变量，就像流水线上的机械手拿到的当前零件。
-3. 禁忌：在这个阶段绝对不要提 while 循环，以免混淆。""",
-                tags=['python', 'coding'],
-                history=[]
-            )
-        ]
+        self.manager = dynamic_skill_manager
 
-    def get_skill_by_id(self, skill_id: str) -> Optional[Skill]:
-        return next((s for s in self.skills if s.id == skill_id), None)
+    @property
+    async def skills(self) -> List[Skill]:
+        """
+        Legacy property to get all skills.
+        Fetches from DB and converts to legacy schema.
+        """
+        async with SessionLocal() as db:
+            try:
+                result = await db.execute(select(SkillModel))
+                db_skills = result.scalars().all()
+                return [self._convert_to_legacy_skill(s) for s in db_skills]
+            except Exception as e:
+                logger.error(f"Failed to fetch all skills: {e}")
+                return []
 
-    def log_evolution(self, skill_id: str, agent_id: str, change_desc: str, new_content: str):
-        skill = self.get_skill_by_id(skill_id)
-        if not skill:
-            return
+    async def get_skills_by_category(self, category: str) -> List[Skill]:
+        """Legacy method to filter skills."""
+        # Note: 'skills' is now async property
+        all_skills = await self.skills
+        if category == "all":
+            return all_skills
+        return [s for s in all_skills if category in s.tags or category in s.name.lower()]
+
+    async def get_skill_by_id(self, skill_id: str) -> Optional[Skill]:
+        """Legacy method to get skill by ID."""
+        async with SessionLocal() as db:
+            try:
+                result = await db.execute(select(SkillModel).where(SkillModel.id == skill_id))
+                db_skill = result.scalars().first()
+                if db_skill:
+                    return self._convert_to_legacy_skill(db_skill)
+                return None
+            except Exception as e:
+                logger.error(f"Failed to fetch skill {skill_id}: {e}")
+                return None
+
+    async def get_skill_history(self, skill_id: str) -> List[SkillEvolutionRecord]:
+        """Get skill history from DB."""
+        async with SessionLocal() as db:
+            try:
+                # Retrieve from SkillHistory table
+                # We also need the current version from Skill table to show complete timeline if needed, 
+                # but SkillHistory contains PAST versions.
+                # The frontend expects a list of records.
+                
+                result = await db.execute(
+                    select(SkillHistory)
+                    .where(SkillHistory.skill_id == skill_id)
+                    .order_by(SkillHistory.created_at.desc())
+                )
+                history_entries = result.scalars().all()
+                
+                records = []
+                for h in history_entries:
+                    # Extract prompt_template from pre_content_json if available
+                    snapshot_text = "N/A"
+                    if h.pre_content_json:
+                         # Handle different structures
+                         if "content" in h.pre_content_json and isinstance(h.pre_content_json["content"], dict):
+                             snapshot_text = h.pre_content_json["content"].get("prompt_template", "")
+                         elif "prompt_template" in h.pre_content_json:
+                             snapshot_text = h.pre_content_json["prompt_template"]
+                         else:
+                             # Fallback to dumping whole json if structure is weird
+                             import json
+                             snapshot_text = json.dumps(h.pre_content_json, indent=2, ensure_ascii=False)
+
+                    records.append(SkillEvolutionRecord(
+                        id=h.id,
+                        skill_id=h.skill_id,
+                        timestamp=h.created_at.timestamp() * 1000 if h.created_at else 0,
+                        agent_id=h.agent_id or "unknown",
+                        change_description=h.change_description or "Update",
+                        diff=None, # Diff calculation not implemented yet
+                        version=h.version,
+                        snapshot_content=snapshot_text
+                    ))
+                return records
+            except Exception as e:
+                logger.error(f"Failed to fetch history for {skill_id}: {e}")
+                return []
+
+    async def delete_skill(self, skill_id: str) -> bool:
+        """Delete a skill."""
+        try:
+            await self.manager.skill_manager.delete_skill(skill_id)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete skill {skill_id}: {e}")
+            return False
+
+    async def create_skill(self, skill_data: Union[Skill, SkillCreate]) -> bool:
+        """Create a new skill from legacy format."""
+        # Convert Legacy Skill -> HierarchicalSkill
+        level_map_rev = {1: SkillLevel.SPECIFIC, 2: SkillLevel.DOMAIN, 3: SkillLevel.META}
         
-        # Calculate fake diff for demo
-        diff = f"Changed content length from {len(skill.content)} to {len(new_content)}"
-        
-        skill.content = new_content
-        skill.version += 1
-        
-        record = SkillEvolutionRecord(
-            skill_id=skill_id,
-            agent_id=agent_id,
-            change_description=change_desc,
-            diff=diff,
-            version=skill.version
+        content = SkillContent(
+            prompt_template=skill_data.content or "", # Ensure not None
+            knowledge_base=[]
         )
-        skill.history.insert(0, record) # Newest first
+        
+        # Ensure ID is present if not provided
+        if isinstance(skill_data, Skill):
+             skill_id = skill_data.id
+        else:
+             skill_id = str(uuid.uuid4())
 
-    def get_skills_by_category(self, category: str) -> List[Skill]:
-        return [s for s in self.skills if s.category == category]
+        h_skill = HierarchicalSkill(
+            id=skill_id,
+            name=skill_data.name,
+            description=skill_data.description,
+            level=level_map_rev.get(skill_data.level, SkillLevel.SPECIFIC),
+            parent_id=skill_data.parentId,
+            content=content,
+            tags=skill_data.tags or []
+        )
+        
+        try:
+            # We assume tenant_id="default" for manually created skills via Admin UI
+            # However, if "default" tenant doesn't exist, we should use "tenant-admin" which is the fallback default.
+            # Ideally this should come from context, but SkillService is a singleton.
+            # Let's try "default" first, if it fails, try "tenant-admin" or ensure "default" exists.
+            # But since we are inside a try-catch, maybe just use "tenant-admin" if that's what the system uses.
+            # The logs showed "tenant-admin" is the authorized context.
+            await self.manager.skill_manager.add_skill(h_skill, tenant_id="tenant-admin")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create skill: {e}")
+            return False
 
-    def retrieve_skills_for_query(self, query: str, category: str = 'tutorial_agent') -> List[Skill]:
+    async def update_skill(self, skill_id: str, skill_data: Union[Skill, SkillCreate]) -> bool:
+        """Update existing skill."""
+        # If it's SkillCreate, we temporarily attach the ID to treat it like a full Skill update
+        if isinstance(skill_data, SkillCreate):
+             # Create a Skill object or just pass it to create_skill which handles it
+             pass
+        
+        # Actually create_skill logic handles both now, but we need to ensure ID is set for update
+        # For update, we want to preserve the ID.
+        
+        # Re-use create_skill logic but force the ID
+        level_map_rev = {1: SkillLevel.SPECIFIC, 2: SkillLevel.DOMAIN, 3: SkillLevel.META}
+        
+        content = SkillContent(
+            prompt_template=skill_data.content or "", 
+            knowledge_base=[]
+        )
+
+        h_skill = HierarchicalSkill(
+            id=skill_id,
+            name=skill_data.name,
+            description=skill_data.description,
+            level=level_map_rev.get(skill_data.level, SkillLevel.SPECIFIC),
+            parent_id=skill_data.parentId,
+            content=content,
+            tags=skill_data.tags or []
+        )
+
+        try:
+            await self.manager.skill_manager.add_skill(h_skill, tenant_id="tenant-admin") # add_skill handles upsert
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update skill: {e}")
+            return False
+
+    def _convert_to_legacy_skill(self, db_skill: SkillModel) -> Skill:
+        """Helper to convert DB model to Pydantic Legacy Skill."""
+        content_data = db_skill.content_json or {}
+        
+        # Map levels: specific->1, domain->2, meta->3
+        level_map = {"specific": 1, "domain": 2, "meta": 3}
+        level_int = level_map.get(db_skill.level, 1)
+        
+        # Extract content prompt
+        prompt = ""
+        if "content" in content_data and isinstance(content_data["content"], dict):
+             prompt = content_data["content"].get("prompt_template", "")
+        elif "prompt_template" in content_data:
+             prompt = content_data["prompt_template"]
+        
+        return Skill(
+            id=db_skill.id,
+            name=db_skill.name,
+            description=db_skill.description or "",
+            category="general", # Default
+            level=level_int,
+            parentId=content_data.get("parent_id"),
+            content=prompt,
+            tags=content_data.get("tags", []),
+            history=[], # Evolution history not fully migrated to this view yet
+            version=1
+        )
+
+    async def retrieve_skills_for_query(self, query: str, category: str = None, tenant_id: str = "default", user_id: str = None) -> List[HierarchicalSkill]:
         """
-        Simple keyword-based retrieval for demonstration.
-        In a real system, this would use vector similarity search (RAG).
+        Retrieves skills using the real DynamicSkillManager.
+        This includes automatic evolution if no specific skills are found.
         """
-        candidates = self.get_skills_by_category(category)
-        matched_skills = []
-        
-        # 1. 强制包含 L3 元技能 (Always Active for this Agent)
-        meta_skills = [s for s in candidates if s.level == 3]
-        matched_skills.extend(meta_skills)
-
-        # 2. 简单的关键词匹配 L1/L2
-        query_lower = query.lower()
-        for skill in candidates:
-            if skill.level < 3:
-                # 如果查询中包含技能名或标签，则召回
-                if skill.name.lower() in query_lower or any(tag in query_lower for tag in skill.tags):
-                    matched_skills.append(skill)
-                    
-                    # 3. 如果召回了 L1，自动召回其父级 L2 (Chain of Skills)
-                    if skill.parentId:
-                        parent = next((s for s in candidates if s.id == skill.parentId), None)
-                        if parent and parent not in matched_skills:
-                            matched_skills.append(parent)
-        
-        # Deduplicate
-        unique_skills = {s.id: s for s in matched_skills}.values()
-        
-        # Sort by Level (L3 -> L2 -> L1) for Prompt Ordering
-        return sorted(unique_skills, key=lambda s: s.level, reverse=True)
+        try:
+            # 1. Ensure we have at least one good skill (triggers evolution if needed)
+            best_skill, reason = await self.manager.get_or_evolve_skill(query, tenant_id=tenant_id, user_id=user_id)
+            
+            # 2. Get related skills (Context expansion)
+            related = await self.manager.skill_manager.retrieve_related_skills(query, tenant_id=tenant_id, limit=5)
+            
+            # 3. Merge and deduplicate
+            skills_map = {s.id: s for s in related}
+            skills_map[best_skill.id] = best_skill 
+            
+            final_list = list(skills_map.values())
+            
+            logger.info(f"SkillService retrieved {len(final_list)} skills for '{query}' (Triggered by: {reason})")
+            return final_list
+            
+        except Exception as e:
+            logger.error(f"SkillService failed: {e}")
+            return []
 
 # Singleton Instance
 skill_service = SkillService()

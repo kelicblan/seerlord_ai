@@ -46,6 +46,9 @@ async def parse_document_tool(file_path: str) -> str:
         logger.error(f"Failed to parse document {file_path}: {e}")
         return f"Error parsing document: {str(e)}"
 
+from server.core.storage import s3_client
+import os
+
 @tool
 async def generate_docx_tool(content: str, filename_prefix: str, user_id: str | None = None) -> str:
     """
@@ -54,15 +57,17 @@ async def generate_docx_tool(content: str, filename_prefix: str, user_id: str | 
     """
     try:
         safe_user_id = "".join(ch for ch in (user_id or "unknown") if ch.isalnum() or ch in {"-", "_"})
-        base_dir = (Path.cwd() / "server" / "data" / "user_files" / safe_user_id).resolve()
-        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Use temp directory for initial generation
+        temp_dir = (Path.cwd() / "server" / "data" / "temp").resolve()
+        temp_dir.mkdir(parents=True, exist_ok=True)
         
         task_id = str(uuid.uuid4())
         md_filename = f"{filename_prefix}_{task_id}.md"
         docx_filename = f"{filename_prefix}_{task_id}.docx"
         
-        md_path = (base_dir / md_filename).resolve()
-        docx_path = (base_dir / docx_filename).resolve()
+        md_path = (temp_dir / md_filename).resolve()
+        docx_path = (temp_dir / docx_filename).resolve()
         
         # Write temp MD (optional, but good for debug)
         with open(md_path, "w", encoding="utf-8") as f:
@@ -80,6 +85,29 @@ async def generate_docx_tool(content: str, filename_prefix: str, user_id: str | 
         if not success:
              return "Error: Failed to generate DOCX file."
 
+        # S3 Upload
+        if s3_client.enabled:
+            object_name = f"docs/{safe_user_id}/{docx_filename}"
+            s3_url = s3_client.upload_file(docx_path, object_name)
+            if s3_url:
+                try:
+                    os.remove(docx_path)
+                    os.remove(md_path)
+                except Exception as cleanup_err:
+                    logger.warning(f"Failed to cleanup temp files: {cleanup_err}")
+                return f"Download Link: {s3_url}"
+
+        # Fallback to local user_files
+        user_dir = (Path.cwd() / "server" / "data" / "user_files" / safe_user_id).resolve()
+        user_dir.mkdir(parents=True, exist_ok=True)
+        final_docx_path = user_dir / docx_filename
+        final_md_path = user_dir / md_filename
+        
+        import shutil
+        shutil.move(str(docx_path), str(final_docx_path))
+        if md_path.exists():
+            shutil.move(str(md_path), str(final_md_path))
+            
         relative_path = f"{safe_user_id}/{docx_filename}"
         return f"path:{relative_path}"
 

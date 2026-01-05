@@ -1,39 +1,63 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Plus, Connection, Timer } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAgent } from '@/composables/useAgent'
 import { useI18n } from 'vue-i18n'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import api from '@/api/axios'
+import * as SkillApi from '@/api/skills'
+import type { Skill, SkillLevel } from '@/api/skills'
 
 const { t } = useI18n()
 
-// Types
-// L1: 具体技能 (Specific) - 如 "学英语"
-// L2: 领域技能 (Domain) - 如 "学语言"
-// L3: 元技能 (Meta) - 如 "学习方法"
-type SkillLevel = 1 | 2 | 3
-
-interface Skill {
-  id: string
-  name: string
-  description: string
-  category: string
-  level: SkillLevel
-  parentId?: string // 父级技能ID，用于构建树状结构
-  content: string // 技能具体内容/定义/Prompt
-  tags: string[]
-}
-
 const { plugins, fetchPlugins } = useAgent()
+
+// State
+const activeCategory = ref<string>('all')
+const searchQuery = ref('')
+const dialogVisible = ref(false)
+const isEdit = ref(false)
+const historyDialogVisible = ref(false)
+const currentSkillHistory = ref<any[]>([])
+const currentSkillName = ref('')
+const loading = ref(false)
+
+const formData = ref<Omit<Skill, 'id' | 'version'>>({
+  name: '',
+  description: '',
+  category: 'fta_analyst',
+  level: 1,
+  parentId: undefined,
+  content: '',
+  tags: []
+})
+
+// Real Data from Backend
+const skills = ref<Skill[]>([])
+
+const fetchSkills = async () => {
+  loading.value = true
+  try {
+    const res = await SkillApi.getSkills(activeCategory.value === 'all' ? undefined : activeCategory.value)
+    skills.value = res.data
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(t('skill_mgmt.toast_fetch_failed'))
+  } finally {
+    loading.value = false
+  }
+}
 
 onMounted(() => {
   fetchPlugins()
+  fetchSkills()
+})
+
+watch(activeCategory, () => {
+  fetchSkills()
 })
 
 // Monaco Editor 配置项
-// 禁用小地图，自动布局，启用格式化，深色主题适配
 const MONACO_OPTIONS = {
   minimap: { enabled: false },
   automaticLayout: true,
@@ -62,97 +86,8 @@ const levelOptions = computed(() => [
   { label: 'L3 (元)', value: 3 as SkillLevel, type: 'warning' as const, desc: '底层的元认知/方法论' },
 ])
 
-// State
-const activeCategory = ref<string>('all')
-const searchQuery = ref('')
-const dialogVisible = ref(false)
-const isEdit = ref(false)
-const historyDialogVisible = ref(false)
-const currentSkillHistory = ref<any[]>([])
-const currentSkillName = ref('')
+// Computed
 
-const formData = ref<Omit<Skill, 'id'>>({
-  name: '',
-  description: '',
-  category: 'fta_analyst',
-  level: 1,
-  parentId: undefined,
-  content: '',
-  tags: []
-})
-
-// Mock Data - 展示树状结构和进化机制
-const skills = ref<Skill[]>([
-  // L3: 元技能
-  {
-    id: '101',
-    name: '学习方法',
-    description: '元认知学习策略 (L3) - 如何高效学习任何知识',
-    category: 'tutorial_agent',
-    level: 3,
-    content: `[Meta-Strategy]
-Goal: Optimize Learning Process
-Steps:
-1. Deconstruct skill into sub-skills
-2. Learn enough to self-correct
-3. Remove practice barriers
-4. Practice at least 20 hours`,
-    tags: ['meta-learning', 'cognition']
-  },
-  // L2: 领域技能 (父级: 学习方法)
-  {
-    id: '102',
-    name: '学语言',
-    description: '语言习得通用模式 (L2) - 词汇/语法/听说的通用训练法',
-    category: 'tutorial_agent',
-    level: 2,
-    parentId: '101',
-    content: `[Domain-Pattern: Language]
-Components:
-- Vocabulary: Spaced Repetition System
-- Grammar: Pattern Recognition
-- Listening: Immersion
-- Speaking: Shadowing`,
-    tags: ['language-acquisition']
-  },
-  // L1: 具体技能 (父级: 学语言)
-  {
-    id: '103',
-    name: '学英语',
-    description: '英语具体语法与词汇 (L1) - 针对英语特性的训练',
-    category: 'tutorial_agent',
-    level: 1,
-    parentId: '102',
-    content: `[Specific-Skill: English]
-- Focus: SVO structure, Tenses, Articles
-- Resources: Oxford 3000, BBC Learning English
-- Practice: Daily conversation with AI`,
-    tags: ['english']
-  },
-  // 模拟进化机制派生的新技能
-  {
-    id: '104',
-    name: '学德语',
-    description: '德语基础入门 (L1) - 由"学语言"派生',
-    category: 'tutorial_agent',
-    level: 1,
-    parentId: '102',
-    content: `[Specific-Skill: German]
-- Focus: Cases (Nominative, Accusative, Dative, Genitive), Genders
-- Resources: DW Deutsch, Nicos Weg`,
-    tags: ['german', 'derived']
-  },
-  // 其他原有数据保留示例
-  {
-    id: '1',
-    name: 'Root Cause Analysis',
-    description: 'Decomposing accidents into underlying causes',
-    category: 'fta_analyst',
-    level: 3,
-    content: 'Standard FTA procedure...',
-    tags: ['safety']
-  }
-])
 
 // Computed
 
@@ -172,12 +107,9 @@ const parentCandidates = computed(() => {
 })
 
 const filteredSkills = computed(() => {
-  let result = skills.value
+  let result = skills.value || [] // 确保不为 undefined
 
-  if (activeCategory.value !== 'all') {
-    result = result.filter(s => s.category === activeCategory.value)
-  }
-
+  // We rely on backend filtering for category, but search is local for now
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(s =>
@@ -236,20 +168,19 @@ const handleDelete = (row: Skill) => {
       cancelButtonText: t('skill_mgmt.btn_cancel'),
       type: 'warning',
     }
-  ).then(() => {
-    // 检查是否有子技能依赖
-    const hasChildren = skills.value.some(s => s.parentId === row.id)
-    if (hasChildren) {
-      ElMessage.warning('无法删除：该技能包含子技能，请先删除或重新分配子技能。')
-      return
+  ).then(async () => {
+    try {
+      await SkillApi.deleteSkill(row.id)
+      ElMessage.success(t('skill_mgmt.toast_deleted'))
+      fetchSkills()
+    } catch (e) {
+      console.error(e)
+      ElMessage.error(t('skill_mgmt.toast_delete_failed'))
     }
-    
-    skills.value = skills.value.filter(s => s.id !== row.id)
-    ElMessage.success(t('skill_mgmt.toast_deleted'))
   })
 }
 
-const handleSubmit = () => {
+const handleSubmit = async () => {
   if (!formData.value.name) {
     ElMessage.warning(t('skill_mgmt.toast_name_required'))
     return
@@ -260,22 +191,21 @@ const handleSubmit = () => {
      // 只是警告，允许无父级的顶层孤儿节点
   }
 
-  if (isEdit.value) {
-    const index = skills.value.findIndex(s => s.id === (formData.value as Skill).id)
-    if (index !== -1) {
-      skills.value[index] = { ...formData.value } as Skill
+  try {
+    if (isEdit.value) {
+      // @ts-ignore
+      await SkillApi.updateSkill((formData.value).id, formData.value)
+      ElMessage.success(t('skill_mgmt.toast_updated'))
+    } else {
+      await SkillApi.createSkill(formData.value)
+      ElMessage.success(t('skill_mgmt.toast_created'))
     }
-    ElMessage.success(t('skill_mgmt.toast_updated'))
-  } else {
-    const newSkill: Skill = {
-      ...formData.value,
-      id: Date.now().toString(),
-      tags: []
-    }
-    skills.value.push(newSkill)
-    ElMessage.success(t('skill_mgmt.toast_created'))
+    dialogVisible.value = false
+    fetchSkills()
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(isEdit.value ? t('skill_mgmt.toast_update_failed') : t('skill_mgmt.toast_create_failed'))
   }
-  dialogVisible.value = false
 }
 
 const handleHistory = async (row: Skill) => {
@@ -283,12 +213,20 @@ const handleHistory = async (row: Skill) => {
   historyDialogVisible.value = true
   currentSkillHistory.value = [] // Reset
   try {
-    const res = await api.get(`/api/v1/skills/${row.id}/history`)
-    currentSkillHistory.value = res.data
+    const res = await SkillApi.getSkillHistory(row.id)
+    currentSkillHistory.value = res.data.map(item => ({
+      ...item,
+      showContent: false,
+      snapshot_content: item.snapshot_content || '暂无内容快照' // Ensure field exists
+    }))
   } catch (e) {
     console.error('Failed to fetch history', e)
-    ElMessage.error('无法获取进化历史')
+    ElMessage.error(t('skill_mgmt.toast_history_failed'))
   }
+}
+
+const toggleDiff = (activity: any) => {
+  activity.showContent = !activity.showContent
 }
 </script>
 
@@ -305,12 +243,12 @@ const handleHistory = async (row: Skill) => {
     </div>
 
     <!-- 系统设计说明面板 -->
-    <ElAlert title="技能核心设计 (Skill Core Design)" type="info" :closable="false" show-icon>
+    <ElAlert :title="t('skill_mgmt.alert_core_design')" type="info" :closable="false" show-icon>
       <template #default>
         <div class="text-xs space-y-1 mt-1">
-          <p><strong>1. 数据结构:</strong> 树状结构 L1 (具体) -> L2 (领域) -> L3 (元)</p>
-          <p><strong>2. 路由机制:</strong> 自底向上回退匹配 (L1 -> L2 -> L3)</p>
-          <p><strong>3. 进化机制:</strong> 自顶向下派生 (L2 成功应用 -> 自动生成新的 L1)</p>
+          <p><strong>{{ t('skill_mgmt.design_p1') }}</strong></p>
+          <p><strong>{{ t('skill_mgmt.design_p2') }}</strong></p>
+          <p><strong>{{ t('skill_mgmt.design_p3') }}</strong></p>
         </div>
       </template>
     </ElAlert>
@@ -354,7 +292,7 @@ const handleHistory = async (row: Skill) => {
           </template>
         </ElTableColumn>
 
-        <ElTableColumn label="父级技能" min-width="120">
+        <ElTableColumn :label="t('skill_mgmt.col_parent')" min-width="120">
            <template #default="{ row }">
              <span v-if="row.parentId" class="text-gray-500 text-sm">
                {{ getSkillName(row.parentId) }}
@@ -365,7 +303,7 @@ const handleHistory = async (row: Skill) => {
 
         <ElTableColumn prop="description" :label="t('skill_mgmt.header_desc')" min-width="200" show-overflow-tooltip />
 
-        <ElTableColumn :label="t('skill_mgmt.header_actions')" width="150" fixed="right">
+        <ElTableColumn :label="t('skill_mgmt.header_actions')" width="170" fixed="right">
           <template #default="{ row }">
             <ElButton link type="primary" size="small" @click="handleEdit(row)">
               {{ t('skill_mgmt.btn_edit') }}
@@ -374,7 +312,7 @@ const handleHistory = async (row: Skill) => {
               {{ t('skill_mgmt.btn_delete') }}
             </ElButton>
             <ElButton link type="warning" size="small" @click="handleHistory(row)">
-              <el-icon><Timer /></el-icon> 进化历史
+              {{ t('skill_mgmt.btn_history') }}
             </ElButton>
           </template>
         </ElTableColumn>
@@ -382,9 +320,9 @@ const handleHistory = async (row: Skill) => {
     </ElCard>
 
     <!-- History Dialog -->
-    <ElDialog v-model="historyDialogVisible" :title="`进化历史 - ${currentSkillName}`" width="700px">
+    <ElDialog v-model="historyDialogVisible" :title="`${t('skill_mgmt.dialog_history_title')} - ${currentSkillName}`" width="900px">
       <div v-if="currentSkillHistory.length === 0" class="text-center py-8 text-gray-400">
-        暂无进化记录 (No Evolution History)
+        {{ t('skill_mgmt.history_none') }}
       </div>
       <ElTimeline v-else>
         <ElTimelineItem
@@ -397,11 +335,25 @@ const handleHistory = async (row: Skill) => {
           <ElCard class="mb-2" shadow="hover">
             <template #header>
                <div class="flex justify-between items-center">
-                  <span class="font-bold text-sm">{{ activity.agent_id }}</span>
-                  <ElTag size="small">v{{ activity.version }}</ElTag>
+                  <div class="flex items-center gap-2">
+                     <span class="font-bold text-sm">{{ activity.agent_id }}</span>
+                     <ElTag size="small">v{{ activity.version }}</ElTag>
+                  </div>
+                  <ElButton link type="primary" size="small" @click="toggleDiff(activity)">
+                    {{ activity.showContent ? '收起内容' : '查看内容' }}
+                  </ElButton>
                </div>
             </template>
-            <div class="text-sm font-medium">{{ activity.change_description }}</div>
+            <div class="text-sm font-medium mb-2">{{ activity.change_description }}</div>
+            
+            <!-- Snapshot Content Display -->
+            <div v-if="activity.showContent" class="mt-2 border-t pt-2">
+                <div class="text-xs text-gray-500 mb-1">历史快照内容:</div>
+                <div class="bg-gray-50 p-3 rounded text-xs font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto border">
+                  {{ activity.snapshot_content }}
+                </div>
+            </div>
+            
             <div v-if="activity.diff" class="mt-2 text-xs bg-gray-50 p-2 rounded text-gray-500 font-mono">
               {{ activity.diff }}
             </div>
@@ -440,8 +392,8 @@ const handleHistory = async (row: Skill) => {
                     </ElSelect>
               </ElFormItem>
 
-              <ElFormItem label="父级技能 (Parent)" v-if="formData.level !== 3">
-                    <ElSelect v-model="formData.parentId" class="w-full" placeholder="选择父级技能" clearable>
+              <ElFormItem :label="t('skill_mgmt.form_parent')" v-if="formData.level !== 3">
+                    <ElSelect v-model="formData.parentId" class="w-full" :placeholder="t('skill_mgmt.form_parent_placeholder')" clearable>
                       <ElOption v-for="p in parentCandidates" :key="p.id" :label="p.name" :value="p.id">
                         <span class="float-left">{{ p.name }}</span>
                         <span class="float-right text-gray-400 text-xs">L{{ p.level }}</span>
@@ -458,7 +410,7 @@ const handleHistory = async (row: Skill) => {
 
           <!-- 右侧：技能内容编辑 (Monaco Editor) -->
           <div class="flex-1 flex flex-col">
-            <ElFormItem label="技能内容 (Content/Definition)" required class="flex-1 flex flex-col h-full">
+            <ElFormItem :label="t('skill_mgmt.form_content')" required class="flex-1 flex flex-col h-full">
               <div class="w-full border rounded-md overflow-hidden border-gray-300 h-[500px]">
                 <VueMonacoEditor
                   v-model:value="formData.content"

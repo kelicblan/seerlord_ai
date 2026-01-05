@@ -30,3 +30,6 @@ neo4j
 llama-index
 llama-index-embeddings-langchain
 llama-index-llms-openai-like
+apscheduler
+boto3
+psutil

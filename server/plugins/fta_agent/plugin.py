@@ -24,6 +24,10 @@ class FTAPlugin(AgentPlugin):
     def description(self) -> str:
         return "Analyzes accidents using Fault Tree Analysis (FTA) to find root causes recursively."
 
+    @property
+    def enable_skills(self) -> bool:
+        return True
+
     def get_graph(self) -> Runnable:
         if not self._graph:
             current_dir = os.path.dirname(os.path.abspath(__file__))

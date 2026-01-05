@@ -15,7 +15,8 @@ import {
   Library,
   FileText,
   Code,
-  Share2
+  Share2,
+  Clock
 } from 'lucide-vue-next'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -37,6 +38,7 @@ const navItems = computed(() => [
   { name: t('common.nav_agent'), path: '/', icon: LayoutDashboard },
   { name: t('common.nav_user_mgmt'), path: '/users', icon: Users },
   { name: t('common.nav_agent_mgmt'), path: '/agents', icon: Bot },
+  { name: t('common.nav_automation'), path: '/automation', icon: Clock },
   { name: t('common.nav_mcp_mgmt'), path: '/mcp', icon: Server },
   { name: t('common.nav_history'), path: '/history', icon: MessageSquare },
   { name: t('common.nav_skills'), path: '/skills', icon: Zap },

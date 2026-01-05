@@ -59,6 +59,7 @@ async def extract_triplets(text: str) -> List[Triplet]:
     1. Identify key entities (Subject, Object) and classify their types (e.g., Person, Organization, Concept, Location, etc.).
     2. Identify the relationship (Predicate) between them. Use precise verbs or relationship names (e.g., "FOUNDED", "LOCATED_IN", "PART_OF").
     3. Be concise but accurate.
+    4. CRITICAL: If the text refers to the speaker or writer (e.g., "I", "me", "my", "我"), ALWAYS use "User" as the entity name.
     
     Text: {text}
     
@@ -79,23 +80,22 @@ async def extract_triplets(text: str) -> List[Triplet]:
         logger.error(f"Failed to extract triplets: {e}")
         return []
 
-async def process_document(file_path: str):
+async def process_document(file_path: str, user_id: str):
     """
     Main pipeline function:
     1. Read File
     2. Chunking
     3. Embedding (Chunk)
     4. Extraction (Entities & Relations)
-    5. Embedding (Entities - New Requirement: Everything has an Embedding)
-    6. Storage (Neo4j)
+    5. Embedding (Entities)
+    6. Storage (Neo4j) with user_id
     """
-    logger.info(f"Processing document: {file_path}")
+    logger.info(f"Processing document: {file_path} for user {user_id}")
     
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
     # 1. Read File
-    # Using SimpleDirectoryReader for a single file
     reader = SimpleDirectoryReader(input_files=[file_path])
     documents = reader.load_data()
     
@@ -119,10 +119,11 @@ async def process_document(file_path: str):
         # 3. Create Document Node (Once)
         await session.run(
             """
-            MERGE (d:Document {filename: $filename})
+            MERGE (d:Document {filename: $filename, user_id: $user_id})
             ON CREATE SET d.upload_date = datetime()
             """,
-            filename=filename
+            filename=filename,
+            user_id=user_id
         )
 
         for i, node in enumerate(nodes):
@@ -135,17 +136,19 @@ async def process_document(file_path: str):
             # 5. Storage (Chunk)
             chunk_id_result = await session.run(
                 """
-                MATCH (d:Document {filename: $filename})
+                MATCH (d:Document {filename: $filename, user_id: $user_id})
                 CREATE (c:Chunk {
                     text: $text,
                     index: $index,
                     embedding: $embedding,
+                    user_id: $user_id,
                     id: randomUUID()
                 })
                 MERGE (c)-[:PART_OF]->(d)
                 RETURN c.id as id
                 """,
                 filename=filename,
+                user_id=user_id,
                 text=chunk_text,
                 index=chunk_index,
                 embedding=chunk_embedding
@@ -167,7 +170,7 @@ async def process_document(file_path: str):
                 # Merge Subject Entity
                 await session.run(
                     """
-                    MERGE (e:Entity {name: $name, type: $type})
+                    MERGE (e:Entity {name: $name, type: $type, user_id: $user_id})
                     ON CREATE SET 
                         e.id = randomUUID(),
                         e.embedding = $embedding,
@@ -177,13 +180,14 @@ async def process_document(file_path: str):
                     """,
                     name=triplet.subject,
                     type=triplet.subject_type,
+                    user_id=user_id,
                     embedding=subj_embedding
                 )
                 
                 # Merge Object Entity
                 await session.run(
                     """
-                    MERGE (e:Entity {name: $name, type: $type})
+                    MERGE (e:Entity {name: $name, type: $type, user_id: $user_id})
                     ON CREATE SET 
                         e.id = randomUUID(),
                         e.embedding = $embedding,
@@ -193,20 +197,22 @@ async def process_document(file_path: str):
                     """,
                     name=triplet.object,
                     type=triplet.object_type,
+                    user_id=user_id,
                     embedding=obj_embedding
                 )
                 
                 # Create Relationship between Entities
                 await session.run(
                     """
-                    MATCH (s:Entity {name: $s_name, type: $s_type})
-                    MATCH (o:Entity {name: $o_name, type: $o_type})
+                    MATCH (s:Entity {name: $s_name, type: $s_type, user_id: $user_id})
+                    MATCH (o:Entity {name: $o_name, type: $o_type, user_id: $user_id})
                     MERGE (s)-[r:RELATED_TO {type: $predicate}]->(o)
                     """,
                     s_name=triplet.subject,
                     s_type=triplet.subject_type,
                     o_name=triplet.object,
                     o_type=triplet.object_type,
+                    user_id=user_id,
                     predicate=triplet.predicate
                 )
                 
@@ -214,30 +220,32 @@ async def process_document(file_path: str):
                 await session.run(
                     """
                     MATCH (c:Chunk {id: $chunk_id})
-                    MATCH (s:Entity {name: $s_name, type: $s_type})
+                    MATCH (s:Entity {name: $s_name, type: $s_type, user_id: $user_id})
                     MERGE (c)-[:MENTIONS]->(s)
                     """,
                     chunk_id=chunk_id,
                     s_name=triplet.subject,
-                    s_type=triplet.subject_type
+                    s_type=triplet.subject_type,
+                    user_id=user_id
                 )
                 
                 await session.run(
                     """
                     MATCH (c:Chunk {id: $chunk_id})
-                    MATCH (o:Entity {name: $o_name, type: $o_type})
+                    MATCH (o:Entity {name: $o_name, type: $o_type, user_id: $user_id})
                     MERGE (c)-[:MENTIONS]->(o)
                     """,
                     chunk_id=chunk_id,
                     o_name=triplet.object,
-                    o_type=triplet.object_type
+                    o_type=triplet.object_type,
+                    user_id=user_id
                 )
 
     logger.info(f"Finished processing {filename}")
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
-        asyncio.run(process_document(sys.argv[1]))
+    if len(sys.argv) > 2:
+        asyncio.run(process_document(sys.argv[1], sys.argv[2]))
     else:
-        print("Usage: python ingestion.py <file_path>")
+        print("Usage: python ingestion.py <file_path> <user_id>")

@@ -45,3 +45,22 @@ class AgentPlugin(ABC):
         默认返回空字符串（即使用通用标准）。
         """
         return ""
+
+    @property
+    def enable_skills(self) -> bool:
+        """
+        [可选] 是否自动启用技能注入。
+        如果为 True，系统框架层会自动尝试为该 Agent 注入技能能力。
+        默认为 False。
+        """
+        return False
+
+    @property
+    def skill_mode(self) -> str:
+        """
+        [可选] 技能注入模式。
+        "context": 作为 System Prompt 上下文注入 (适用于内容生成)。
+        "tool": 作为可调用工具注入 (适用于任务执行)。
+        默认为 "context"。
+        """
+        return "context"

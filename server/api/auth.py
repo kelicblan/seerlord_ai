@@ -28,6 +28,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         is_whitelisted = False
         if request.url.path in ["/api/v1/users/me", "/api/v1/mcp/status", "/api/v1/plugins", "/api/v1/files/upload", "/api/v1/agent/stream_events"]:
             is_whitelisted = True
+        elif request.url.path.startswith("/api/v1/skills"):
+            is_whitelisted = True
         elif request.url.path.startswith("/api/v1/agent/") and request.url.path.endswith("/graph"):
             is_whitelisted = True
         elif not request.url.path.startswith("/api/") and not request.url.path.startswith("/agent"):

@@ -28,6 +28,7 @@ class Skill(Base):
     description = Column(Text)
     code = Column(Text) # Python source code (from content.code_logic)
     level = Column(String, default=SkillLevelEnum.SPECIFIC.value)
+    version = Column(Integer, default=1)
     
     content_json = Column(JSON) # Store full SkillContent and Stats
     
@@ -36,6 +37,20 @@ class Skill(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     tenant = relationship("Tenant", back_populates="skills")
+    history = relationship("SkillHistory", back_populates="skill", cascade="all, delete-orphan")
+
+class SkillHistory(Base):
+    __tablename__ = "skill_history"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    skill_id = Column(String, ForeignKey("skills.id"), index=True)
+    version = Column(Integer)
+    pre_content_json = Column(JSON) # Snapshot of content BEFORE this version
+    change_description = Column(Text)
+    agent_id = Column(String, nullable=True) # Who made the change
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    skill = relationship("Skill", back_populates="history")
 
 class DocumentStatusEnum(str, enum.Enum):
     PENDING = "pending"

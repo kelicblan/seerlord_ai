@@ -24,6 +24,7 @@ const settings = ref<Record<string, string>>({})
 // System Settings Form
 const systemForm = ref({
   AGENT_LLM_ID: '',
+  FULL_MODAL_MODEL_ID: '',
   EMBEDDING_MODEL_ID: '',
   RERANKER_MODEL_ID: '',
   TEXT_TO_IMAGE_MODEL_ID: '',
@@ -58,7 +59,8 @@ const modelTypeOptions = [
   { label: 'Reranker', value: 'reranker' },
   { label: 'Text-to-Image', value: 'text-to-image' },
   { label: 'Text-to-Video', value: 'text-to-video' },
-  { label: 'Voice', value: 'voice' }
+  { label: 'Voice', value: 'voice' },
+  { label: 'MoE', value: 'MoE' }
 ]
 
 // Computed properties for filtering models
@@ -68,6 +70,7 @@ const rerankerModels = computed(() => models.value.filter(m => m.model_type === 
 const textToImageModels = computed(() => models.value.filter(m => m.model_type === 'text-to-image'))
 const textToVideoModels = computed(() => models.value.filter(m => m.model_type === 'text-to-video'))
 const voiceModels = computed(() => models.value.filter(m => m.model_type === 'voice'))
+const fullModalModels = computed(() => models.value.filter(m => m.model_type === 'llm' || m.model_type === 'MoE'))
 
 // Initialization
 const fetchData = async () => {
@@ -90,6 +93,7 @@ const fetchData = async () => {
     // Initialize system form
     systemForm.value = {
       AGENT_LLM_ID: settingsMap['AGENT_LLM_ID'] || '',
+      FULL_MODAL_MODEL_ID: settingsMap['FULL_MODAL_MODEL_ID'] || '',
       EMBEDDING_MODEL_ID: settingsMap['EMBEDDING_MODEL_ID'] || '',
       RERANKER_MODEL_ID: settingsMap['RERANKER_MODEL_ID'] || '',
       TEXT_TO_IMAGE_MODEL_ID: settingsMap['TEXT_TO_IMAGE_MODEL_ID'] || '',
@@ -115,6 +119,7 @@ const saveSystemSettings = async () => {
   try {
     const settingsToUpdate = [
       { key: 'AGENT_LLM_ID', value: systemForm.value.AGENT_LLM_ID, description: 'Active LLM Agent Model ID' },
+      { key: 'FULL_MODAL_MODEL_ID', value: systemForm.value.FULL_MODAL_MODEL_ID, description: 'Active Full Modal Model ID' },
       { key: 'EMBEDDING_MODEL_ID', value: systemForm.value.EMBEDDING_MODEL_ID, description: 'Active Embedding Model ID' },
       { key: 'RERANKER_MODEL_ID', value: systemForm.value.RERANKER_MODEL_ID, description: 'Active Reranker Model ID' },
       { key: 'TEXT_TO_IMAGE_MODEL_ID', value: systemForm.value.TEXT_TO_IMAGE_MODEL_ID, description: 'Active Text-to-Image Model ID' },
@@ -235,6 +240,7 @@ const handleDeleteModel = async (row: LLMModel) => {
                 <!-- Agent Model Selection -->
                 <div class="space-y-2">
                   <h3 class="text-lg font-medium">{{ t('settings.agent_model') }}</h3>
+                  <div class="grid grid-cols-1 gap-2 md:grid-cols-2 ">
                   <ElFormItem :label="t('settings.default_agent')">
                     <ElSelect v-model="systemForm.AGENT_LLM_ID" placeholder="Select an LLM model" class="w-full">
                       <ElOption
@@ -246,7 +252,16 @@ const handleDeleteModel = async (row: LLMModel) => {
                     </ElSelect>
                   </ElFormItem>
                   
-                  <div class="grid grid-cols-1 md:grid-cols-2 ">
+                  <ElFormItem :label="t('settings.full_modal_model')">
+                    <ElSelect v-model="systemForm.FULL_MODAL_MODEL_ID" placeholder="Select a Full Modal model" class="w-full">
+                      <ElOption
+                        v-for="item in fullModalModels"
+                        :key="item.id"
+                        :label="item.name + ' (' + item.model_name + ')'"
+                        :value="item.id.toString()"
+                      />
+                    </ElSelect>
+                  </ElFormItem>
                     <ElFormItem :label="t('settings.embedding_model')">
                       <ElSelect v-model="systemForm.EMBEDDING_MODEL_ID" placeholder="Select an Embedding model" class="w-full">
                          <ElOption

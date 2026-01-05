@@ -17,9 +17,9 @@ from loguru import logger
 
 database_url = settings.DATABASE_URL
 if not database_url:
-    # Fallback to sqlite for dev convenience if no postgres env provided
-    # Note: user needs aiosqlite installed for this.
-    database_url = "sqlite+aiosqlite:///./sql_app.db"
+    # Fallback to postgres to match server.db.session default
+    # Was: database_url = "sqlite+aiosqlite:///./sql_app.db"
+    database_url = "postgresql+asyncpg://user:password@localhost:5432/seerlord"
 else:
     database_url = database_url.replace("postgresql://", "postgresql+asyncpg://")
 

@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from pathlib import Path
+from loguru import logger
 
 from server.core.database import get_db
 from server.api.auth import get_current_tenant_id
 from server.models.artifact import AgentArtifact
+from server.core.config import settings
+from server.core.storage import s3_client
 
 router = APIRouter()
 
@@ -144,6 +147,16 @@ async def preview_artifact(
     if artifact.type == "content":
         return {"content": artifact.value, "type": "content"}
     elif artifact.type == "file":
+        # Check if it is a remote URL (S3)
+        val = artifact.value.strip()
+        if val.startswith("http://") or val.startswith("https://"):
+            filename = val.split("?")[0].split("/")[-1]
+            return {
+                "type": "file",
+                "filename": filename,
+                "download_url": f"/api/v1/artifact/{artifact_id}/download",
+            }
+
         file_path = _resolve_artifact_file_path(artifact.value)
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="File not found on server")
@@ -169,6 +182,25 @@ async def download_artifact(
         raise HTTPException(status_code=404, detail="Artifact not found")
     
     if artifact.type == "file":
+        # Check if it is a remote URL (S3)
+        val = artifact.value.strip()
+        if val.startswith("http://") or val.startswith("https://"):
+            # Try to generate presigned URL if it belongs to our S3
+            if s3_client.enabled and settings.S3_ENDPOINT in val and settings.S3_BUCKET_NAME in val:
+                try:
+                    # Attempt to parse key
+                    # Pattern: {endpoint}/{bucket}/{key}
+                    prefix = f"{settings.S3_ENDPOINT.rstrip('/')}/{settings.S3_BUCKET_NAME}/"
+                    if val.startswith(prefix):
+                        key = val[len(prefix):]
+                        presigned = s3_client.get_presigned_url(key)
+                        if presigned:
+                            return RedirectResponse(url=presigned)
+                except Exception as e:
+                    logger.warning(f"Failed to generate presigned URL for {val}: {e}")
+
+            return RedirectResponse(url=val)
+
         file_path = _resolve_artifact_file_path(artifact.value)
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="File not found on server")

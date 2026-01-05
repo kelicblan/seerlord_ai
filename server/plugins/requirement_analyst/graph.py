@@ -6,10 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from server.core.llm import get_llm
 from .state import RequirementAnalystState
 from .tools import parse_document_tool, generate_docx_tool
-from server.memory.tools import memory_node
 from server.core.database import SessionLocal
 from server.models.artifact import AgentArtifact
 from server.kernel.mcp_manager import mcp_manager
+from server.kernel.skill_integration import skill_injector
 import uuid
 import yaml
 import os
@@ -411,8 +411,13 @@ async def generate_doc1(state: RequirementAnalystState, config: RunnableConfig) 
     if not parsed_content:
         return {} # Should not happen if parse_input succeeds
 
+    skills = state.get("skills_context", "")
+    sys_prompt = SYSTEM_PROMPT
+    if skills:
+        sys_prompt += f"\n\n[Expert Guidelines]:\n{skills}"
+
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=sys_prompt),
         HumanMessage(content=f"{DOC1_PROMPT}\n\n以下是需求文档原始内容：\n\n{parsed_content}")
     ]
     
@@ -435,8 +440,13 @@ async def generate_doc2(state: RequirementAnalystState, config: RunnableConfig) 
     if not parsed_content:
         return {}
 
+    skills = state.get("skills_context", "")
+    sys_prompt = SYSTEM_PROMPT
+    if skills:
+        sys_prompt += f"\n\n[Expert Guidelines]:\n{skills}"
+
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=sys_prompt),
         HumanMessage(content=f"{DOC2_PROMPT}\n\n以下是需求文档原始内容：\n\n{parsed_content}")
     ]
     
@@ -499,6 +509,14 @@ async def convert_and_finalize(state: RequirementAnalystState, config: RunnableC
 
         if "url:" in raw:
             url = raw.split("url:", 1)[1].strip()
+        
+        # Handle "Download Link:" format (S3)
+        if "Download Link:" in raw:
+            url = raw.split("Download Link:", 1)[1].strip()
+        
+        # Fallback: Check if raw is just a URL
+        if not url and (raw.strip().startswith("http://") or raw.strip().startswith("https://")):
+             url = raw.strip()
 
         return path, url, raw
 
@@ -510,26 +528,28 @@ async def convert_and_finalize(state: RequirementAnalystState, config: RunnableC
         if tenant_id:
             current_tokens = state.get("total_tokens", 0)
             async with SessionLocal() as db:
-                if path1:
+                if path1 or url1:
+                    val1 = url1 if url1 else path1
                     db.add(AgentArtifact(
                         id=str(uuid.uuid4()),
                         tenant_id=tenant_id,
                         user_id=user_id,
                         agent_id="requirement_analyst",
                         type="file",
-                        value=path1,
+                        value=val1,
                         title="项目需求规格说明书与实施方案",
                         description="自动生成的需求规格说明书",
                         total_tokens=current_tokens
                     ))
-                if path2:
+                if path2 or url2:
+                    val2 = url2 if url2 else path2
                     db.add(AgentArtifact(
                         id=str(uuid.uuid4()),
                         tenant_id=tenant_id,
                         user_id=user_id,
                         agent_id="requirement_analyst",
                         type="file",
-                        value=path2,
+                        value=val2,
                         title="系统开发综合指导手册",
                         description="自动生成的开发指导手册",
                         total_tokens=current_tokens
@@ -539,13 +559,15 @@ async def convert_and_finalize(state: RequirementAnalystState, config: RunnableC
         logger.error(f"Failed to save artifacts: {e}")
 
     final_msg = "需求分析完成！已为您生成以下两份文档：\n\n"
-    if path1:
-        final_msg += "1. 项目需求规格说明书与实施方案：已生成（可在内容广场下载）\n"
+    if path1 or url1:
+        link1 = url1 if url1 else path1
+        final_msg += f"1. 项目需求规格说明书与实施方案：已生成\n   [点击下载]({link1})\n"
     else:
         final_msg += f"1. 项目需求规格说明书与实施方案：生成失败 ({raw1})\n"
 
-    if path2:
-        final_msg += "2. 系统开发综合指导手册：已生成（可在内容广场下载）\n"
+    if path2 or url2:
+        link2 = url2 if url2 else path2
+        final_msg += f"2. 系统开发综合指导手册：已生成\n   [点击下载]({link2})\n"
     else:
         final_msg += f"2. 系统开发综合指导手册：生成失败 ({raw2})\n"
 
@@ -570,14 +592,14 @@ async def convert_and_finalize(state: RequirementAnalystState, config: RunnableC
 # Build Graph
 workflow = StateGraph(RequirementAnalystState)
 
-workflow.add_node("memory_load", memory_node)
+workflow.add_node("load_skills", skill_injector.load_skills_context)
 workflow.add_node("parse_input", parse_input)
 workflow.add_node("generate_doc1", generate_doc1)
 workflow.add_node("generate_doc2", generate_doc2)
 workflow.add_node("convert_and_finalize", convert_and_finalize)
 
-workflow.set_entry_point("memory_load")
-workflow.add_edge("memory_load", "parse_input")
+workflow.set_entry_point("load_skills")
+workflow.add_edge("load_skills", "parse_input")
 
 # Edges
 def check_parse_success(state: RequirementAnalystState):

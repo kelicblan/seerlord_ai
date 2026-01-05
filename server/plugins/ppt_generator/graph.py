@@ -6,7 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from server.core.llm import get_llm
 from .state import PPTGeneratorState
 from .tools import generate_ppt
-from server.memory.tools import memory_node
+from server.kernel.skill_integration import skill_injector
 import yaml
 import os
 import uuid
@@ -31,11 +31,44 @@ async def analyze_and_generate(state: PPTGeneratorState, config: RunnableConfig)
     """
     messages = state["messages"]
     
+    # 获取技能上下文
+    skills = state.get("skills_context", "")
+    full_system_prompt = SYSTEM_PROMPT
+    if skills:
+        full_system_prompt += f"\n\n[Expert Guidelines]:\n{skills}"
+
     # 确保系统提示词在最前
     if not isinstance(messages[0], SystemMessage):
-        messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+        messages = [SystemMessage(content=full_system_prompt)] + messages
+    else:
+        # 如果已经有 SystemMessage (比如从 load_skills 来的?)
+        # SkillInjector 已经在 messages 列表里放了一个 SystemMessage。
+        # 这里我们是想合并，还是追加？
+        # SkillInjector 的消息是 "Dynamic Skills Active..."
+        # 这里的 SYSTEM_PROMPT 是 "你是 PPT 生成助手..."
+        # 最好是保留两个 SystemMessage，LangChain 会处理。
+        # 但这里代码强制替换了第一个？
+        # "if not isinstance(messages[0], SystemMessage)" -> 如果第一个不是 SystemMessage，就加一个。
+        # 如果第一个已经是 SkillInjector 的 SystemMessage，这里就不会加 SYSTEM_PROMPT 了！
+        # 这是一个 Bug 隐患。
+        # 修正逻辑：不管有没有，我们都要把我们的业务 Prompt 加上。
+        # 我们可以插入到开头，或者追加。
+        pass
+        
+    # 修正逻辑：
+    # SkillInjector 会在 messages 列表末尾追加 SystemMessage (实际上是追加到 state['messages'])。
+    # 当我们这里取 state['messages'] 时，它包含用户消息和技能消息。
+    # 我们应该把业务 Prompt 放在最前面。
     
-    response = await llm_with_tools.ainvoke(messages, config)
+    prompts = [SystemMessage(content=SYSTEM_PROMPT)]
+    if skills:
+        prompts.append(SystemMessage(content=f"[Expert Guidelines]:\n{skills}"))
+        
+    # Filter out existing SystemMessages if we want to avoid duplication?
+    # No, let's just prepend.
+    final_messages = prompts + messages
+    
+    response = await llm_with_tools.ainvoke(final_messages, config)
     
     return {"messages": [response]}
 
@@ -106,12 +139,12 @@ def route_next(state: PPTGeneratorState):
 # 构建图
 workflow = StateGraph(PPTGeneratorState)
 
-workflow.add_node("memory_load", memory_node)
+workflow.add_node("load_skills", skill_injector.load_skills_context)
 workflow.add_node("analyze_and_generate", analyze_and_generate)
 workflow.add_node("execute_tools", execute_tools)
 
-workflow.set_entry_point("memory_load")
-workflow.add_edge("memory_load", "analyze_and_generate")
+workflow.set_entry_point("load_skills")
+workflow.add_edge("load_skills", "analyze_and_generate")
 
 workflow.add_conditional_edges(
     "analyze_and_generate",
