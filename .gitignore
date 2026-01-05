@@ -70,12 +70,9 @@ readme.txt
 Temp_Files/
 
 # User Data
-server/data/temp/
-server/data/user_files/
-server/data/uploads/
-server/data/comic_assets/
-server/data/comics/
-server/data/comic_pages/
+server/data/
+app/
+Arch_Docs/
 
 # Trae IDE
 .trae/
