@@ -69,7 +69,17 @@
     "close": "關閉",
     "cancel": "取消",
     "input": "輸入",
-    "output": "輸出"
+    "output": "輸出",
+    "my_account": "我的帳戶",
+    "log_out": "登出",
+    "change_password": "修改密碼",
+    "old_password": "舊密碼",
+    "new_password": "新密碼",
+    "confirm_password": "確認新密碼",
+    "password_mismatch": "兩次輸入的密碼不一致",
+    "password_updated": "密碼修改成功",
+    "please_input_password": "請輸入密碼",
+    "operation_failed": "操作失敗"
   },
   "help": {
     "title": "協助中心",
@@ -80,6 +90,8 @@
     "nav_user_mgmt_desc": "管理員可以新增、編輯、刪除平台用戶，以及重置用戶密碼。支援設定超級管理員權限。",
     "nav_agent_mgmt": "智能體管理",
     "nav_agent_mgmt_desc": "建立和配置自定義智能體。定義智能體的名稱、描述、系統提示詞（System Prompt）以及關聯的工具和技能。",
+    "nav_automation": "自動化任務",
+    "nav_automation_desc": "管理和執行自動化工作流任務。",
     "nav_mcp_mgmt": "MCP 管理",
     "nav_mcp_mgmt_desc": "管理 Model Context Protocol (MCP) 服務。連接外部工具和服務，查看已連接服務的狀態和可用工具列表。",
     "nav_history": "會話歷史",

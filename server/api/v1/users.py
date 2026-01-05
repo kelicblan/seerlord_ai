@@ -5,8 +5,8 @@ from sqlalchemy import select, update, delete, or_, func
 
 from server.core.database import get_db
 from server.models.user import User
-from server.schemas.user import UserCreate, UserUpdate, UserResponse, UserPage
-from server.core.security import get_password_hash
+from server.schemas.user import UserCreate, UserUpdate, UserResponse, UserPage, UserPasswordUpdate
+from server.core.security import get_password_hash, verify_password
 from server.api.v1.login import get_current_user
 from loguru import logger
 
@@ -86,6 +86,27 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+@router.post("/me/password", response_model=UserResponse)
+async def update_current_user_password(
+    password_in: UserPasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update current user password.
+    """
+    if not verify_password(password_in.old_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Incorrect old password"
+        )
+        
+    current_user.hashed_password = get_password_hash(password_in.new_password)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
 
 @router.put("/{user_id}", response_model=UserResponse)
 async def update_user(

@@ -80,6 +80,7 @@
     ```bash
     python scripts/init_db.py
     ```
+    > **注意**：该脚本还会自动创建一个默认的管理员账户。
 
 5.  **启动后端**
     ```bash
@@ -112,7 +113,14 @@
     ```
     构建完成后，将 `admin/dist` 目录下的所有文件复制到 `server/static/` 目录下。重启后端服务后，即可通过 `http://localhost:8000` 访问前端。
 
-## 4. 数据库初始化说明
+## 4. 默认管理员账户
+
+数据库初始化完成后（无论是通过 Docker 还是 `init_db.py`），系统会自动创建一个默认管理员账户：
+
+*   **用户名**: `seerlord`
+*   **密码**: `12345678`
+
+## 5. 数据库初始化说明
 
 本项目采用 SQLAlchemy ORM 管理数据库结构。
 
@@ -122,7 +130,7 @@
     psql -U user -d seerlord -f db_schema.sql
     ```
 
-## 5. 常见问题
+## 6. 常见问题
 
 **Q: 启动时报错 "FATAL: password authentication failed for user"**
 A: 请检查 `.env` 文件中的 `DATABASE_URL` 是否与您本地或 Docker 的数据库密码一致。

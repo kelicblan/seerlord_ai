@@ -15,6 +15,10 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
 
+class UserPasswordUpdate(BaseModel):
+    old_password: str
+    new_password: str
+
 class UserResponse(UserBase):
     id: int
     

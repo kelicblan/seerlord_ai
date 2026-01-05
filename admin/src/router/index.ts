@@ -18,7 +18,8 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         {
-          path: '',
+          path: 'chat',
+          alias: '',
           name: 'home',
           component: HomeView,
           meta: { title: 'common.nav_agent' }
@@ -66,13 +67,13 @@ const router = createRouter({
           meta: { title: 'common.nav_knowledge' }
         },
         {
-          path: 'knowledge-graph',
-          name: 'knowledge-graph',
+          path: 'kl-graph',
+          name: 'kl-graph',
           component: () => import('@/views/KnowledgeGraph.vue'),
           meta: { title: 'common.nav_knowledge_graph' }
         },
         {
-          path: 'content-plaza',
+          path: 'plaza',
           name: 'content-plaza',
           component: () => import('@/views/AgentContentPlaza.vue'),
           meta: { title: 'common.nav_content_plaza' }

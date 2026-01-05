@@ -56,10 +56,11 @@ async def extract_triplets(text: str) -> List[Triplet]:
     Extract entities and their relationships in the form of (Subject, Predicate, Object) triplets.
     
     Guidelines:
-    1. Identify key entities (Subject, Object) and classify their types (e.g., Person, Organization, Concept, Location, etc.).
-    2. Identify the relationship (Predicate) between them. Use precise verbs or relationship names (e.g., "FOUNDED", "LOCATED_IN", "PART_OF").
+    1. Identify key entities (Subject, Object) and classify their types (e.g., Person, Organization, Concept, Location, Date, Event).
+    2. Identify the relationship (Predicate) between them. Use precise verbs or relationship names (e.g., "FOUNDED", "LOCATED_IN", "PART_OF", "HAS_BIRTHDAY").
     3. Be concise but accurate.
     4. CRITICAL: If the text refers to the speaker or writer (e.g., "I", "me", "my", "我"), ALWAYS use "User" as the entity name.
+    5. Treat Dates (e.g., "Dec 30", "Lunar Dec 30", "农历十二月三十") as distinct Entities with type "Date".
     
     Text: {text}
     

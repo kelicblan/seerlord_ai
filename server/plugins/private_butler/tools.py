@@ -108,7 +108,7 @@ async def memory_write(fact: str, config: RunnableConfig) -> str:
 async def memory_read(query: str, config: RunnableConfig) -> str:
     """
     Retrieves information from the Personal Knowledge Graph.
-    Use this to answer questions about the user's life, history, or preferences.
+    Use this to answer questions about the user's life, history, preferences, OR to check if a date/entity has personal significance.
     """
     user_id = config.get("configurable", {}).get("user_id")
     if not user_id:

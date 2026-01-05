@@ -36,15 +36,17 @@ async def supervisor_node(state: ButlerState):
     structured_llm = llm.with_structured_output(RouterOutput)
     
     system_prompt = (
-        "You are the Supervisor of a Private Butler Agent.\n"
-        "Classify the user's input into one of the following categories:\n"
-        "- MEMORY_READ: User asks a question about their past, preferences, or stored info. \n"
-        "  CRITICAL: If the user asks 'What is X?' or 'When is Y?' (e.g., 'What is Lunar Dec 30th?'), "
-        "  ALWAYS check memory first by selecting MEMORY_READ, as X or Y might be a personal entity/date.\n"
-        "- MEMORY_WRITE: User provides a fact, event, or preference to remember.\n"
-        "- TASK: User asks to perform an external action (email, calendar, search).\n"
-        "- CHITCHAT: Casual conversation or greeting. Only select this if you are sure there is no personal context.\n"
-        "- PROACTIVE: (Do not select this unless explicitly triggered, which is handled by code).\n"
+        "You are the Supervisor of a Private Butler Agent. "
+        "Classify the user's input into one of the following categories:\n\n"
+        "1. MEMORY_WRITE (Collection): User provides information about themselves, their life, work, or preferences.\n"
+        "   - Examples: 'My birthday is Dec 30', 'I like apples', 'I am a software engineer'.\n\n"
+        "2. MEMORY_READ (Consultation): User asks a question that might involve personal context OR general knowledge mixed with personal context.\n"
+        "   - CRITICAL: If the user asks 'What is X?' (e.g., 'What is Dec 30?'), classify as MEMORY_READ so we can check if X has personal significance (like a birthday) before answering with general knowledge.\n"
+        "   - Examples: 'When is my birthday?', 'What is Dec 30?', 'Where do I live?'.\n\n"
+        "3. TASK: User asks to perform an external action (email, calendar, search).\n\n"
+        "4. CHITCHAT: Purely casual conversation with NO potential personal entity reference.\n"
+        "   - Only select this if you are sure the query (e.g., 'Hi', 'How are you') does not need memory lookup.\n\n"
+        "5. PROACTIVE: (Internal use only).\n"
     )
     
     try:
@@ -98,18 +100,31 @@ async def memory_agent_node(state: ButlerState):
     llm_with_tools = llm.bind_tools([memory_read, memory_write])
     
     messages = state["messages"]
+    user_intent = state.get("user_intent")
     
-    # --- ReAct Execution Loop (Manual) ---
-    # 1. First LLM Call (Decide Tool)
-    response = await llm_with_tools.ainvoke(messages)
+    # Force Tool Use Prompt: Only apply this for MEMORY_READ or ambiguous queries
+    # If MEMORY_WRITE, the LLM usually writes correctly without force.
+    if user_intent == "MEMORY_READ":
+        force_tool_prompt = SystemMessage(content=(
+            "You are the Memory Agent. The Supervisor has sent the user here because the query likely involves Personal Memory. "
+            "Rules:\n"
+            "1. You MUST call `memory_read` to check for personal connections to the query topics (e.g., dates, names) BEFORE answering.\n"
+            "2. Even for general questions (e.g., 'What is Dec 30?'), you MUST check if that date has a personal event (like a birthday) attached to it.\n"
+            "3. Only answer directly if you have ALREADY called the tool."
+        ))
+        # Prepend the system prompt to the messages for this turn
+        initial_response = await llm_with_tools.ainvoke([force_tool_prompt] + messages)
+    else:
+        # For MEMORY_WRITE, standard execution
+        initial_response = await llm_with_tools.ainvoke(messages)
     
-    final_messages = [response]
+    final_messages = [initial_response]
     
     # 2. Check for Tool Calls
-    if response.tool_calls:
-        logger.info(f"Memory Agent decided to call tools: {len(response.tool_calls)}")
+    if initial_response.tool_calls:
+        logger.info(f"Memory Agent decided to call tools: {len(initial_response.tool_calls)}")
         
-        for tool_call in response.tool_calls:
+        for tool_call in initial_response.tool_calls:
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
             tool_call_id = tool_call["id"]
@@ -132,7 +147,21 @@ async def memory_agent_node(state: ButlerState):
         
         # 3. Second LLM Call (Generate Final Answer)
         # We need to append the new messages to the history for the final call
-        all_messages = messages + final_messages
+        
+        # Synthesis Prompt: Explicitly instruct LLM to combine memory + general knowledge
+        synthesis_prompt = SystemMessage(content=(
+            "You are a helpful Private Butler. "
+            "You have access to the user's personal memory (see the Tool Output above). "
+            "Your task is to answer the user's question by SYNTHESIZING their personal memory with your general knowledge.\n"
+            "Rules:\n"
+            "1. DO NOT reveal the raw tool output, analysis, or 'No info found' messages to the user. These are for your internal reasoning only.\n"
+            "2. If the Tool Output contains personal info (e.g., 'Dec 30 is birthday'), explicitly mention it.\n"
+            "3. If the user's question also allows for general knowledge (e.g., 'What is Dec 30?'), provide that general context as well.\n"
+            "4. If the Tool Output says 'No info found', just answer with your general knowledge or acknowledge the new info if writing.\n"
+            "5. Be polite and concise."
+        ))
+        
+        all_messages = [synthesis_prompt] + messages + final_messages
         final_response = await llm.ainvoke(all_messages)
         final_messages.append(final_response)
         
@@ -212,19 +241,21 @@ graph_builder.add_node("task_agent", task_agent_node)
 graph_builder.add_node("chitchat", chitchat_node)
 graph_builder.add_node("proactive_agent", proactive_node)
 
-graph_builder.add_edge(START, "load_skills")
-graph_builder.add_edge("load_skills", "supervisor")
+graph_builder.add_edge(START, "supervisor")
+# graph_builder.add_edge("load_skills", "supervisor") # Removed: Skills are now loaded only when needed
 
 graph_builder.add_conditional_edges(
     "supervisor",
     route_supervisor,
     {
         "memory_agent": "memory_agent",
-        "task_agent": "task_agent",
+        "task_agent": "load_skills", # Only load skills if intent is TASK
         "chitchat": "chitchat",
         "proactive_agent": "proactive_agent"
     }
 )
+
+graph_builder.add_edge("load_skills", "task_agent")
 
 graph_builder.add_edge("memory_agent", END)
 graph_builder.add_edge("task_agent", END)

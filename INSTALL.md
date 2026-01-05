@@ -80,6 +80,7 @@ Use this method for development or if you need fine-grained control.
     ```bash
     python scripts/init_db.py
     ```
+    > **Note:** This script will also create a default admin user.
 
 5.  **Start Backend**
     ```bash
@@ -103,7 +104,7 @@ Use this method for development or if you need fine-grained control.
     ```bash
     npm run dev
     ```
-    The frontend will run at `http://localhost:5173`. In dev mode, ensure the API URL in `.env` points to your backend.
+    The frontend will run at `http://localhost:5173`. In development mode, ensure the API address in `.env` points to the backend.
 
 4.  **Production Build**
     If you want to integrate the frontend into the backend service:
@@ -112,20 +113,27 @@ Use this method for development or if you need fine-grained control.
     ```
     After building, copy all files from `admin/dist` to `server/static/`. Restart the backend service, and you can access the frontend via `http://localhost:8000`.
 
-## 4. Database Initialization Details
+## 4. Default Admin Account
 
-This project uses SQLAlchemy ORM to manage database structures.
+After database initialization (either via Docker or `init_db.py`), a default administrator account is created automatically:
 
-*   **Automatic Initialization**: Every time the app starts (`server/main.py`) or you run `scripts/init_db.py`, the system automatically detects and creates missing tables.
-*   **Manual SQL**: If you are in an environment where you cannot run Python, or need to audit the SQL structure, you can execute the `db_schema.sql` file located in the root directory directly against your database.
+*   **Username**: `seerlord`
+*   **Password**: `12345678`
+
+## 5. Database Initialization Details
+
+This project uses SQLAlchemy ORM for database structure management.
+
+*   **Automatic Initialization**: Every time the application starts (`server/main.py`) or `scripts/init_db.py` runs, the system automatically checks and creates missing tables.
+*   **Manual SQL**: If you cannot run Python or need to audit the SQL structure, use the `db_schema.sql` file in the root directory.
     ```bash
     psql -U user -d seerlord -f db_schema.sql
     ```
 
-## 5. Troubleshooting
+## 6. FAQ
 
-**Q: "FATAL: password authentication failed for user" on startup**
-A: Check if the `DATABASE_URL` in your `.env` matches your local or Docker database password.
+**Q: "FATAL: password authentication failed for user" during startup**
+A: Check if the `DATABASE_URL` in your `.env` file matches your local or Docker database password.
 
-**Q: Page shows 404 Not Found**
-A: If accessing `http://localhost:8000` returns 404, it means static files are not loaded correctly. Ensure you have run `npm run build` and copied the artifacts to `server/static`, or use Docker deployment (which handles this automatically).
+**Q: 404 Not Found on page load**
+A: If accessing `http://localhost:8000` returns 404, the frontend static files might not be loaded correctly. Ensure you ran `npm run build` and copied the artifacts to `server/static`, or use Docker deployment (which handles this automatically).

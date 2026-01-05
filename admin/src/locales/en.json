@@ -69,7 +69,17 @@
     "close": "Close",
     "cancel": "Cancel",
     "input": "Input",
-    "output": "Output"
+    "output": "Output",
+    "my_account": "My Account",
+    "log_out": "Log out",
+    "change_password": "Change Password",
+    "old_password": "Old Password",
+    "new_password": "New Password",
+    "confirm_password": "Confirm New Password",
+    "password_mismatch": "Passwords do not match",
+    "password_updated": "Password updated successfully",
+    "please_input_password": "Please input password",
+    "operation_failed": "Operation failed"
   },
   "help": {
     "title": "Help Center",
@@ -80,6 +90,8 @@
     "nav_user_mgmt_desc": "Admins can add, edit, and delete users, and reset passwords. Manage superuser privileges.",
     "nav_agent_mgmt": "Agent Management",
     "nav_agent_mgmt_desc": "Create and configure custom agents. Define agent names, descriptions, system prompts, and associate tools/skills.",
+    "nav_automation": "Automation Tasks",
+    "nav_automation_desc": "Manage and execute automation workflow tasks.",
     "nav_mcp_mgmt": "MCP Management",
     "nav_mcp_mgmt_desc": "Manage Model Context Protocol (MCP) services. Connect external tools, view connection status and available tools.",
     "nav_history": "Chat History",
