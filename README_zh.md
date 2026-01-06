@@ -197,7 +197,14 @@ npm run dev
 
 可通过 `VITE_API_URL`（以及可选的 `VITE_TENANT_API_KEY`）指向后端地址。
 
-## 📄 开源协议
+## � 引用
+
+如果您在研究中觉得本项目有用，请引用我们的论文：
+
+> **SeerLord AI Skill System**
+> DOI: [10.5281/zenodo.18144848](https://doi.org/10.5281/zenodo.18144848)
+
+## �📄 开源协议
 
 本项目采用 [MIT 许可证](LICENSE) 开源。
 
