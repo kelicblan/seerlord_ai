@@ -201,6 +201,13 @@ npm run dev
 
 Set `VITE_API_URL` (and optionally `VITE_TENANT_API_KEY`) to point to your backend.
 
+## 📚 Citation
+
+If you find this project useful in your research, please cite our paper:
+
+> **SeerLord AI Skill System**
+> DOI: [10.5281/zenodo.18144848](https://doi.org/10.5281/zenodo.18144848)
+
 ## 📄 License
 
 This project is open-sourced under the [MIT License](LICENSE).

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "seerlord-ai"
-version = "0.6.0"
+version = "0.7.0"
 description = "Modular AI Platform using Micro-Kernel + Plugin architecture"
 authors = ["Admin <admin@example.com>"]
 readme = "README.md"
