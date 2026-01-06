@@ -2,6 +2,7 @@ import { ref, reactive, watch } from 'vue'
 import api from '@/api/axios'
 import { fetchStream } from '@/api/fetchStream'
 import i18n from '@/i18n'
+import { ElMessage } from 'element-plus'
 
 export interface AgentPlugin {
   id: string
@@ -33,6 +34,7 @@ export interface LogEntry {
   time: string
   type: string
   detail: string
+  data?: any
 }
 
 export interface Metrics {
@@ -103,7 +105,10 @@ export function useAgent() {
   const threadId = ref(`web-test-${Date.now()}`)
 
   const createNewSession = () => {
-    threadId.value = `web-test-${Date.now()}`
+    // Generate a better ID
+    const random = Math.random().toString(36).substring(2, 10)
+    threadId.value = `sess-${Date.now()}-${random}`
+    
     messages.value = [{
       role: 'ai',
       content: (i18n.global as any).t('common.welcome_message'),
@@ -114,54 +119,78 @@ export function useAgent() {
     addLog('INFO', 'New session created')
   }
 
+  const parseThoughts = (events: any[]): ThoughtStep[] => {
+      if (!events || !Array.isArray(events)) return []
+      
+      const steps: Record<string, ThoughtStep> = {}
+      const result: ThoughtStep[] = []
+      
+      events.forEach(event => {
+          const runId = event.run_id
+          const type = event.event
+          const name = event.name
+          
+          if (type === 'on_tool_start' || type === 'on_chain_start') {
+             if (name === 'LangGraph' || name.startsWith('__')) return
+             
+             steps[runId] = {
+                 id: runId,
+                 type: type === 'on_tool_start' ? 'tool' : 'thought',
+                 name: name,
+                 status: 'pending',
+                 startTime: Date.now(), 
+             }
+             if (event.data?.input) {
+                 steps[runId].input = typeof event.data.input === 'string' ? event.data.input : JSON.stringify(event.data.input)
+             }
+             result.push(steps[runId])
+          } else if (type === 'on_tool_end' || type === 'on_chain_end') {
+              if (steps[runId]) {
+                  steps[runId].status = 'success'
+                  if (event.data?.output) {
+                      steps[runId].output = typeof event.data.output === 'string' 
+                        ? event.data.output 
+                        : JSON.stringify(event.data.output)
+                  }
+              }
+          }
+      })
+      
+      return result
+  }
+
   const loadSession = async (id: string) => {
     threadId.value = id
     isThinking.value = true
     messages.value = [] // Clear current messages
     resetMetrics()
     
-    // TODO: Replace with actual backend API call
-    // For now, we simulate loading history based on ID
     addLog('INFO', `Loading session ${id}...`)
     
     try {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 600))
-      
-      // Mock data
-      messages.value = [
-        {
-          role: 'ai',
-          content: (i18n.global as any).t('common.welcome_message'),
-          timestamp: Date.now() - 100000
-        },
-        {
-          role: 'user',
-          content: 'Help me analyze the latest AI news.',
-          timestamp: Date.now() - 90000
-        },
-        {
-          role: 'ai',
-          content: 'Sure! I can help you with that. Here is a summary of the latest AI news...',
-          timestamp: Date.now() - 80000,
-          thoughts: [
-            {
-              id: 'job-1',
-              type: 'thought',
-              name: 'news_search',
-              status: 'success',
-              startTime: Date.now() - 85000,
-              duration: 2000,
-              output: 'Found 5 articles'
-            }
-          ]
+        const response = await api.get(`/api/v1/chat/sessions/${id}/messages`)
+        const history = response.data
+        
+        messages.value = history.map((msg: any) => ({
+            role: msg.role,
+            content: msg.content || '',
+            timestamp: new Date(msg.created_at).getTime(),
+            thoughts: parseThoughts(msg.thoughts || [])
+        }))
+        
+        if (messages.value.length === 0) {
+             messages.value = [{
+              role: 'ai',
+              content: (i18n.global as any).t('common.welcome_message'),
+              timestamp: Date.now()
+            }]
         }
-      ]
       
       addLog('INFO', 'Session loaded successfully')
     } catch (e) {
       console.error(e)
       addLog('ERROR', 'Failed to load session')
+      ElMessage.error('无法加载会话历史')
     } finally {
       isThinking.value = false
     }
@@ -219,11 +248,12 @@ export function useAgent() {
     }
   }
 
-  const addLog = (type: string, detail: string) => {
+  const addLog = (type: string, detail: string, data?: any) => {
     logs.value.push({
       time: new Date().toLocaleTimeString(),
       type,
-      detail
+      detail,
+      data
     })
   }
 
@@ -328,7 +358,7 @@ export function useAgent() {
 
               // --- 1. Tool Events ---
               if (eventType === 'on_tool_start') {
-                addLog('TOOL', `Starting ${eventName}`)
+                addLog('TOOL', `Starting ${eventName}`, eventData.data?.input)
                 const step: ThoughtStep = {
                   id: runId,
                   type: 'tool',
@@ -341,7 +371,7 @@ export function useAgent() {
               } 
               else if (eventType === 'on_tool_end') {
                 const status = eventData.data.output ? "SUCCESS" : "FAILED"
-                addLog('TOOL', `Finished ${eventName} (${status})`)
+                addLog('TOOL', `Finished ${eventName} (${status})`, eventData.data?.output)
                 
                 const step = thoughts.find(s => s.id === runId)
                 if (step) {
@@ -354,7 +384,7 @@ export function useAgent() {
               }
               // --- 2. Chain/Node Events (Thoughts) ---
               else if (eventType === 'on_chain_start' && eventName && eventName !== 'LangGraph' && !eventName.startsWith('__')) {
-                addLog('NODE', `Entering: ${eventName}`)
+                addLog('NODE', `Entering: ${eventName}`, eventData.data?.input)
                 nodeStatuses.value[eventName] = 'running'
                 
                 // Treat meaningful nodes as "thoughts"
@@ -377,7 +407,7 @@ export function useAgent() {
                 }
               }
               else if (eventType === 'on_chain_end' && eventName && eventName !== 'LangGraph' && !eventName.startsWith('__')) {
-                addLog('NODE', `Finished: ${eventName}`)
+                addLog('NODE', `Finished: ${eventName}`, eventData.data?.output)
                 nodeStatuses.value[eventName] = 'completed'
 
                 const step = thoughts.find(s => s.id === runId)
@@ -465,7 +495,7 @@ export function useAgent() {
                 else if (eventData.metadata?.ls_model_name) actualModel = eventData.metadata.ls_model_name
 
                 const displayName = actualModel ? `${eventName || 'LLM'} (${actualModel})` : (eventName || 'LLM')
-                addLog('MODEL', `Invoking: ${displayName}`)
+                addLog('MODEL', `Invoking: ${displayName}`, eventData.data?.input)
 
                 if (eventData.data?.input?.messages) {
                   // Flatten if it's a list of lists (sometimes happens in LangChain)
@@ -511,7 +541,7 @@ export function useAgent() {
               else if (eventType === 'on_chat_model_end') {
 
                 const output = eventData.data?.output
-                addLog('MODEL', `Finished: ${eventName || 'LLM'}`)
+                addLog('MODEL', `Finished: ${eventName || 'LLM'}`, output)
                 
                 let usage = output?.usage_metadata
                 

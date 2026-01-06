@@ -87,5 +87,47 @@ class DynamicSkillManager:
                 
         return best_skill, reason
 
+    async def refine_existing_skill(self, skill: HierarchicalSkill, feedback: str, tenant_id: str, user_id: str = None) -> Optional[HierarchicalSkill]:
+        """
+        Trigger the evolver to refine an existing skill based on execution feedback.
+        """
+        logger.info(f"🔧 Refining skill: {skill.name} based on feedback...")
+        
+        # Prepare context for Evolver
+        evolver_input = {
+            "task": "refine_skill",
+            "conversation_history": [],
+            "related_skills": [],
+            "skill_to_refine": skill,
+            "execution_feedback": feedback,
+            "reasoning_log": []
+        }
+        
+        try:
+            result = await self.evolver_app.ainvoke(evolver_input)
+            refined_skill = result.get("proposed_skill")
+            
+            if refined_skill:
+                logger.info(f"✨ Refinement Complete! Updating skill: {refined_skill.name}")
+                
+                # Persist the refined skill (this will create a new version in SQLSkillManager)
+                await self.skill_manager.add_skill(refined_skill, tenant_id=tenant_id, user_id=user_id)
+                
+                await adispatch_custom_event(
+                    "skill_refined",
+                    {
+                        "name": refined_skill.name,
+                        "description": refined_skill.description
+                    }
+                )
+                
+                return refined_skill
+            else:
+                logger.warning(f"🔧 Refinement failed: {result.get('evolution_report')}")
+        except Exception as e:
+            logger.error(f"❌ Refinement error: {e}")
+            
+        return None
+
 # Global instance
 dynamic_skill_manager = DynamicSkillManager()

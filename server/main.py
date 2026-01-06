@@ -36,7 +36,7 @@ from server.kernel.master_graph import build_master_graph
 from server.kernel.mcp_manager import mcp_manager
 from server.memory.manager import MemoryManager
 from server.api.auth import TenantMiddleware
-from server.api.v1 import paas_agent, agent, login, users, skills, tools, files, knowledge, artifact, api_keys, settings as settings_api, automation
+from server.api.v1 import paas_agent, agent, login, users, skills, tools, files, knowledge, artifact, api_keys, settings as settings_api, automation, chat
 from server.core.database import engine, Base, SessionLocal
 from anyio import to_thread
 from server.core.scheduler import scheduler, load_jobs_from_db
@@ -256,6 +256,7 @@ app.include_router(artifact.router, prefix="/api/v1/artifact", tags=["Artifact"]
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["API Keys"])
 app.include_router(settings_api.router, prefix="/api/v1/settings", tags=["Settings"])
 app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 
 # SKE Router
 from server.ske.router import router as ske_router

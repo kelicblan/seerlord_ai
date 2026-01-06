@@ -18,7 +18,8 @@ import {
   Share2,
   Clock
 } from 'lucide-vue-next'
-import { ElMessage, type FormInstance } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import type { FormRules } from 'element-plus'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import logo from '@/assets/images/logo.png'

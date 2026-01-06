@@ -69,6 +69,17 @@ const splitterLayout = computed(() => (isLg.value ? 'horizontal' : 'vertical'))
 const leftPanelSize = ref<string | number>('55%')
 const rightPanelSize = ref<string | number>('45%')
 
+// Log Drawer
+const logDrawerVisible = ref(false)
+const selectedLog = ref<any>(null)
+
+const handleLogClick = (log: any) => {
+  if (log.data) {
+    selectedLog.value = log
+    logDrawerVisible.value = true
+  }
+}
+
 // Helper to get localized plugin name
 const getPluginName = (plugin: any) => {
   const isChinese = locale.value === 'zh-CN' || locale.value === 'zh-TW'
@@ -686,7 +697,10 @@ const handleSend = async () => {
             <ElTabPane name="logs" :label="t('common.execution_log')">
               <div class="h-[calc(100vh-270px)] overflow-auto">
                 <div class="p-2 font-mono text-xs space-y-1">
-                  <div v-for="(log, i) in logs" :key="i" class="border-b border-border/50 pb-1 last:border-0">
+                  <div v-for="(log, i) in logs" :key="i" 
+                    class="border-b border-border/50 pb-1 last:border-0 transition-colors duration-200"
+                    :class="{ 'cursor-pointer hover:bg-muted/50': log.data }"
+                    @click="handleLogClick(log)">
                     <span class="text-muted-foreground">[{{ log.time }}]</span>
                     <ElTag type="info" effect="plain" class="mx-2">
                       {{ log.type }}
@@ -736,7 +750,7 @@ const handleSend = async () => {
                   </span>
                 </template>
 
-                <div class="h-full overflow-y-auto p-4 space-y-6">
+                <div  class="h-[calc(100vh-270px)] overflow-auto p-4 space-y-6">
                   <!-- 1. Evolution Events (High Priority) -->
                   <div v-if="skillExecutionData.evolutions.length > 0" class="space-y-3">
                     <div class="flex items-center gap-2 text-amber-600 font-bold border-b pb-2 border-amber-100">
@@ -806,6 +820,19 @@ const handleSend = async () => {
         </div>
       </ElSplitterPanel>
     </ElSplitter>
+
+    <ElDrawer v-model="logDrawerVisible" title="事件详情" direction="ltr" size="40%">
+      <div v-if="selectedLog" class="h-full flex flex-col">
+        <div class="mb-4">
+          <ElTag type="info" class="mr-2">{{ selectedLog.type }}</ElTag>
+          <span class="text-sm text-muted-foreground">{{ selectedLog.time }}</span>
+        </div>
+        <div class="text-sm font-medium mb-2">{{ selectedLog.detail }}</div>
+        <div class="bg-muted p-4 rounded-md overflow-auto flex-1 custom-scrollbar">
+          <pre class="text-xs font-mono whitespace-pre-wrap break-all">{{ JSON.stringify(selectedLog.data, null, 2) }}</pre>
+        </div>
+      </div>
+    </ElDrawer>
   </div>
 </template>
 

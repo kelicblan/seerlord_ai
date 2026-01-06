@@ -8,6 +8,9 @@ from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, Ski
 from server.plugins._skill_evolver_.state import EvolverState
 from server.memory.tools import memory_node
 
+import json
+import re
+
 # --- Node Implementations ---
 
 async def analyze_gap(state: EvolverState) -> Dict[str, Any]:
@@ -72,12 +75,75 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
     analysis = state["reasoning_log"][-1]
     response = await chain.ainvoke({"analysis": analysis})
     
-    # Parse JSON (simplified for now)
-    import json
-    import re
-    from server.kernel.hierarchical_manager import HierarchicalSkillManager
+    return _parse_skill_response(response.content, parent_id=None)
+
+async def refine_skill(state: EvolverState) -> Dict[str, Any]:
+    """Refine an existing skill based on feedback."""
+    llm = get_llm(temperature=0.1)
     
-    content = response.content
+    skill = state["skill_to_refine"]
+    if not skill:
+        return {"evolution_report": "Error: No skill provided for refinement."}
+        
+    feedback = state.get("execution_feedback", "No feedback provided.")
+    
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are an expert Skill Architect. Your task is to OPTIMIZE an existing skill based on execution feedback.
+        
+        Return ONLY a JSON object compatible with the HierarchicalSkill schema (preserving the same structure).
+        Do NOT include any markdown formatting (like ```json), explanations, or chatter. Just the raw JSON string.
+        
+        Example JSON Structure:
+        {{
+            "name": "SkillName",
+            "description": "...",
+            "level": "specific",
+            "content": {{
+                "prompt_template": "...",
+                "knowledge_base": ["..."]
+            }}
+        }}
+        
+        Focus on improving:
+        1. The 'prompt_template' to be more precise or handle edge cases.
+        2. The 'knowledge_base' to add missing facts found in feedback.
+        
+        Do NOT change the skill name unless necessary.
+        """),
+        ("human", """
+        Original Skill:
+        Name: {name}
+        Description: {description}
+        Prompt: {prompt_template}
+        Knowledge: {knowledge}
+        
+        Execution Feedback:
+        {feedback}
+        
+        Refine the skill now. Return the full JSON.
+        """)
+    ])
+    
+    chain = prompt | llm
+    
+    response = await chain.ainvoke({
+        "name": skill.name,
+        "description": skill.description,
+        "prompt_template": skill.content.prompt_template,
+        "knowledge": "\n".join(skill.content.knowledge_base),
+        "feedback": feedback
+    })
+    
+    # We pass the original skill ID as parent_id to track lineage (optional, or handle in manager)
+    # Actually, for refinement, we might want to keep the same ID or let the manager handle versioning.
+    # Here we just return the new definition. The manager handles the DB update.
+    return _parse_skill_response(response.content, parent_id=skill.id)
+
+def _parse_skill_response(content: str, parent_id: str = None) -> Dict[str, Any]:
+    """Helper to parse JSON skill definition from LLM response."""
+    # Clean up markdown code blocks if present
+    content = content.replace("```json", "").replace("```", "").strip()
+    
     # Extract JSON block
     match = re.search(r'\{.*\}', content, re.DOTALL)
     if match:
@@ -87,19 +153,15 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
             # Ensure minimal fields
             if "content" in data and isinstance(data["content"], dict):
                 # Basic validation passed, construct object
-                # Note: ID and stats are auto-generated
                 skill = HierarchicalSkill(
                     name=data.get("name", "NewSkill"),
                     description=data.get("description", ""),
                     level=data.get("level", "specific"),
                     content=SkillContent(**data["content"]),
-                    parent_id=data.get("parent_id")
+                    parent_id=parent_id 
                 )
                 
-                # Note: We do NOT save here anymore. 
-                # The DynamicSkillManager handles persistence to SQL/Qdrant with proper context (tenant/user).
-                
-                return {"proposed_skill": skill, "evolution_report": f"Skill '{skill.name}' created and saved successfully."}
+                return {"proposed_skill": skill, "evolution_report": f"Skill '{skill.name}' processed successfully."}
         except Exception as e:
             return {"evolution_report": f"Failed to parse or save skill JSON: {e}"}
             
@@ -107,15 +169,33 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
 
 # --- Graph Definition ---
 
+def route_evolution(state: EvolverState) -> str:
+    """Decide whether to draft new skill or refine existing one."""
+    if state.get("skill_to_refine"):
+        return "refine_skill"
+    return "analyze_gap"
+
 workflow = StateGraph(EvolverState)
 
 workflow.add_node("memory_load", memory_node)
 workflow.add_node("analyze_gap", analyze_gap)
 workflow.add_node("draft_skill", draft_skill)
+workflow.add_node("refine_skill", refine_skill)
 
 workflow.set_entry_point("memory_load")
-workflow.add_edge("memory_load", "analyze_gap")
+
+# Conditional routing
+workflow.add_conditional_edges(
+    "memory_load",
+    route_evolution,
+    {
+        "analyze_gap": "analyze_gap",
+        "refine_skill": "refine_skill"
+    }
+)
+
 workflow.add_edge("analyze_gap", "draft_skill")
 workflow.add_edge("draft_skill", END)
+workflow.add_edge("refine_skill", END)
 
 app = workflow.compile()

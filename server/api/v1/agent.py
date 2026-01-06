@@ -8,6 +8,7 @@ import asyncio
 import yaml
 from loguru import logger
 from langchain_core.load.dump import dumpd
+from langgraph.graph import START, END
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import jwt, JWTError
@@ -21,6 +22,7 @@ from server.models.user import User
 from server.models.llm_trace import LLMTrace
 from server.models.tutorial_export import TutorialExport
 from server.memory.manager import MemoryManager
+from server.crud import chat as crud_chat
 from datetime import datetime
 from pathlib import Path
 
@@ -106,6 +108,19 @@ async def stream_events(
             config["metadata"] = {}
         config["metadata"]["tenant_id"] = tenant_id
     
+    # Extract query from messages (Common for Memory and History)
+    msgs = input_data.get("messages", [])
+    query = ""
+    if isinstance(msgs, list) and msgs:
+        # Find last human message
+        for m in reversed(msgs):
+            if isinstance(m, dict) and m.get("type") == "human":
+                query = m.get("content", "")
+                break
+            elif hasattr(m, "type") and m.type == "human":
+                query = m.content
+                break
+
     # [Middleware] Memory Loading (Pre-Execution)
     # Check config for memory settings. Default enabled=True unless explicitly disabled.
     memory_config = config.get("configurable", {}).get("memory", {})
@@ -114,18 +129,6 @@ async def stream_events(
     if memory_enabled:
         try:
             mem_mgr = await MemoryManager.get_instance()
-            # Extract query from messages
-            msgs = input_data.get("messages", [])
-            query = ""
-            if isinstance(msgs, list) and msgs:
-                # Find last human message
-                for m in reversed(msgs):
-                    if isinstance(m, dict) and m.get("type") == "human":
-                        query = m.get("content", "")
-                        break
-                    elif hasattr(m, "type") and m.type == "human":
-                        query = m.content
-                        break
             
             if query:
                 user_id_for_mem = input_data.get("user_id", "default_user")
@@ -210,6 +213,29 @@ async def stream_events(
         # Track active runs for tracing
         active_traces = {} # run_id -> trace_dict
         final_ai_response = "" # Track final response for memory
+        collected_thoughts = [] # Track thoughts for history
+
+        # [History] Save User Message
+        thread_id = config.get("configurable", {}).get("thread_id")
+        if current_user and thread_id and query:
+             try:
+                async with SessionLocal() as session:
+                    # Ensure session exists
+                    chat_session = await crud_chat.get_or_create_session(
+                        session, 
+                        session_id=thread_id, 
+                        user_id=current_user.id,
+                        agent_id=target_plugin or "master"
+                    )
+                    
+                    await crud_chat.create_message(
+                        session,
+                        session_id=thread_id,
+                        role="user",
+                        content=query
+                    )
+             except Exception as e:
+                logger.error(f"Failed to save user message to history: {e}")
         
         try:
             # LangGraph astream_events yields events
@@ -225,6 +251,11 @@ async def stream_events(
                     
                     # Log event type for debugging
                     event_type = serializable_event.get("event")
+                    
+                    # Collect thoughts for UI history
+                    if event_type in ["on_tool_start", "on_tool_end", "on_chain_start", "on_chain_end", "on_chat_model_start", "on_chat_model_end"]:
+                         collected_thoughts.append(serializable_event)
+
                     if event_type == "on_chat_model_start":
                         logger.info(f"Stream: Chat Model Start (RunID: {serializable_event.get('run_id')})")
                     elif event_type == "on_chat_model_stream":
@@ -317,6 +348,20 @@ async def stream_events(
             memory_auto_save = memory_config.get("auto_save", True)
             memory_read_only = memory_config.get("read_only", False)
             
+            # [History] Save AI Message
+            if current_user and thread_id and final_ai_response:
+                try:
+                    async with SessionLocal() as session:
+                        await crud_chat.create_message(
+                            session,
+                            session_id=thread_id,
+                            role="ai",
+                            content=final_ai_response,
+                            thoughts=collected_thoughts
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to save AI message to history: {e}")
+
             # We need query variable from outer scope
             # Ensure final_ai_response is not empty
             if memory_enabled and memory_auto_save and not memory_read_only and final_ai_response and query:
@@ -352,6 +397,51 @@ async def get_master_graph():
     except Exception as e:
         logger.error(f"Failed to generate master graph: {e}")
         return {"mermaid": None, "error": str(e)}
+
+@router.get("/{plugin_id}/graph/json")
+async def get_plugin_graph_json(
+    plugin_id: str,
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """Get JSON graph definition for a plugin or master graph"""
+    try:
+        app = None
+        if plugin_id == "master":
+            app = build_master_graph()
+        else:
+            plugin = registry.get_plugin(plugin_id)
+            if not plugin:
+                raise HTTPException(status_code=404, detail=f"Plugin {plugin_id} not found")
+            app = plugin.get_graph()
+            
+        graph = app.get_graph()
+        
+        # Convert to JSON serializable format
+        nodes = []
+        for node_id, node in graph.nodes.items():
+            nodes.append({
+                "id": node.id,
+                "type": "custom" if node.id not in [START, END] else "input" if node.id == START else "output",
+                "data": {
+                    "label": node.id,
+                    "metadata": str(node.data) if hasattr(node, "data") else ""
+                }
+            })
+            
+        edges = []
+        for edge in graph.edges:
+            edges.append({
+                "id": f"{edge.source}-{edge.target}",
+                "source": edge.source,
+                "target": edge.target,
+                "type": "smoothstep"
+            })
+            
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        logger.error(f"Failed to generate graph JSON: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tutorial_exports/{export_id}/download")
 async def download_tutorial_export(

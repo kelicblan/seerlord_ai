@@ -6,6 +6,8 @@ from server.ske.agent.workflow import ske_agent
 from server.ske.database import Neo4jManager
 from server.ske.ingestion import process_document
 from server.ske.search import SkeSearchService
+from server.api.v1.login import get_current_user
+from server.models.user import User
 
 router = APIRouter()
 
@@ -89,13 +91,18 @@ def normalize_props(props: Dict[str, Any]) -> Dict[str, Any]:
     return new_props
 
 @router.get("/graph", response_model=GraphResponse)
-async def get_graph(limit: int = 100):
+async def get_graph(
+    limit: int = 100,
+    current_user: User = Depends(get_current_user)
+):
     """
     Get graph data for visualization.
     """
     driver = await Neo4jManager.get_driver()
+    # Filter nodes by user_id to ensure data isolation
     query = f"""
     MATCH (n)-[r]->(m)
+    WHERE n.user_id = $user_id AND m.user_id = $user_id
     RETURN n, r, m
     LIMIT {limit}
     """
@@ -104,7 +111,7 @@ async def get_graph(limit: int = 100):
     links = []
     
     async with driver.session() as session:
-        result = await session.run(query)
+        result = await session.run(query, user_id=str(current_user.id))
         async for record in result:
             n = record["n"]
             m = record["m"]

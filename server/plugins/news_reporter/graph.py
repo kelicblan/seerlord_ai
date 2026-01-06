@@ -30,34 +30,51 @@ class NewsState(TypedDict):
 # Node: Search News
 async def search_node(state: NewsState):
     """
-    Fetches tech news from NewsMinimalist using web-tools (Headless mode).
+    Searches for tech news using Bing Search via MCP.
     """
-    # Use the new 'web-tools' MCP tool - PREFER HEADLESS for JS sites
-    tool = mcp_manager.get_tool("web-tools", "fetch_headless_content")
+    # Determine query from user input or default
+    query = "latest technology news"
+    messages = state.get("messages", [])
+    if messages and isinstance(messages[-1], HumanMessage):
+        user_input = messages[-1].content.strip()
+        if user_input:
+            query = user_input
+
+    # Use the 'bing_search' MCP tool
+    # Adjust server name 'bingcn' if necessary based on environment, or just search by tool name
+    tool = mcp_manager.get_tool("bingcn", "bing_search")
     
     if not tool:
-        # Fallback to standard fetch if headless not available
-        logger.warning("MCP Tool 'fetch_headless_content' not found, falling back to 'fetch_url_content'")
-        tool = mcp_manager.get_tool("web-tools", "fetch_url_content")
-
-    if not tool:
-        logger.error("No fetch tools found in 'web-tools'.")
-        return {"news_content": "Error: Web fetch tool is unavailable."}
+        # Fallback logic or error
+        logger.warning("MCP Tool 'bing_search' (server: bingcn) not found.")
+        # Try finding by tool name only if server name might differ
+        # (This depends on mcp_manager implementation, usually get_tool requires server_name)
+        return {"news_content": "Error: Bing Search tool is unavailable."}
 
     # Call the tool
     try:
-        # Note: from=2&to=10 captures more items (lower significance threshold) to meet the target of ~50 items.
-        # To ensure we get enough items, we use headless browser with scrolling (implemented in web-tools).
-        url = "https://www.newsminimalist.com/?category=all&from=2&to=10&sort=latest"
-        logger.info(f"Fetching news from {url}...")
+        logger.info(f"Searching news with query: {query}")
         
-        # Pass wait_for_selector if using headless to ensure news items load
-        # .news-item or similar common classes, but generic wait is safer if unknown
-        news_content = await tool.ainvoke({"url": url})
+        # Invoke tool with query
+        search_results = await tool.ainvoke({"query": query})
         
+        # Validation
+        if not search_results:
+             return {"news_content": "Error: No search results found."}
+             
+        # Convert to string if it's a list/dict
+        if not isinstance(search_results, str):
+            import json
+            try:
+                news_content = json.dumps(search_results, ensure_ascii=False, indent=2)
+            except:
+                news_content = str(search_results)
+        else:
+            news_content = search_results
+            
     except Exception as e:
-        logger.error(f"Error fetching news: {e}")
-        return {"news_content": f"Error fetching news: {str(e)}"}
+        logger.error(f"Error searching news: {e}")
+        return {"news_content": f"Error searching news: {str(e)}"}
     
     return {"news_content": news_content}
 
@@ -68,30 +85,35 @@ async def summarize_node(state: NewsState):
     """
     news_content = state.get("news_content", "")
     
-    if not news_content or "Error fetching" in news_content:
+    # Check for various error conditions
+    is_error = (
+        not news_content 
+        or len(news_content) < 50 
+        or "Error" in news_content[:50]
+    )
+    
+    if is_error:
         logger.warning(f"News content is empty or error: {news_content[:100]}")
-        msg = "⚠️ **无法获取最新的科技新闻数据**\n\n数据源暂时无法访问（可能由于网络波动或访问频率限制）。请稍后再试。\n\n"
-        if "429" in news_content:
-            msg += "*(错误代码: 429 Too Many Requests)*"
+        msg = f"⚠️ **无法获取最新的新闻数据**\n\n原因：{news_content}\n\n"
         return {"latest_summary": msg, "messages": [AIMessage(content=msg)]}
 
     skills = state.get("skills_context", "")
 
     base_prompt = (
         "You are a 'Private Intelligence Officer' for SeerLord AI.\n"
-        "Your task is to parse the raw text from NewsMinimalist and generate a clean, Chinese briefing.\n"
-        "Raw content usually contains news items with titles, scores, and sources.\n\n"
+        "Your task is to analyze the search results and generate a clean, Chinese briefing.\n\n"
         f"[Expert Guidelines]:\n{skills}\n\n"
         "Requirements:\n"
-        "1. Extract AT LEAST 50 technology news items. Do not stop at 10. If there are fewer than 50, extract all of them.\n"
-        "2. Translate titles to Simplified Chinese.\n"
-        "3. Format each item strictly as: `[Chinese Title](original_link) (Source) - Time`.\n"
-        "   - If 'Time' is not available, omit it or use 'Recently'.\n"
-        "   - If 'Source' is not available, omit it.\n"
-        "4. DO NOT add summary text under items.\n"
-        "5. Group them under a header like '## 🚀 Tech Intelligence'.\n"
+        "1. Extract key news items from the search results.\n"
+        "2. Translate titles/summaries to Simplified Chinese.\n"
+        "3. Format each item strictly as: `[Chinese Title](link) (Source) - Time`.\n"
+        "   - Use the provided snippet/link in the search results.\n"
+        "   - If 'Time' is not available, omit it.\n"
+        "   - If 'Source' is not available, try to infer from the domain.\n"
+        "4. DO NOT add summary text under items unless necessary for context.\n"
+        "5. Group them under a header like '## 🚀 News Intelligence'.\n"
         "6. Maintain a professional, objective tone.\n"
-        f"Raw News Data:\n{news_content[:80000]}" # Increased limit to capture ~50 items
+        f"Search Results:\n{news_content[:20000]}"
     )
 
     llm = get_llm(temperature=0.5)
@@ -162,6 +184,14 @@ async def email_node(state: NewsState, config: RunnableConfig):
         
     return {}
 
+def should_email(state: NewsState):
+    """Determine if we should send an email based on the summary content."""
+    summary = state.get("latest_summary", "")
+    # Don't email if it's an error message
+    if "⚠️" in summary or "无法获取" in summary:
+        return "finalize_news"
+    return "email_news"
+
 # Build Graph
 graph_builder = StateGraph(NewsState)
 
@@ -174,7 +204,17 @@ graph_builder.add_node("finalize_news", finalize_node)
 graph_builder.add_edge(START, "load_skills")
 graph_builder.add_edge("load_skills", "search_news")
 graph_builder.add_edge("search_news", "summarize_news")
-graph_builder.add_edge("summarize_news", "email_news")
+
+# Conditional routing for email
+graph_builder.add_conditional_edges(
+    "summarize_news",
+    should_email,
+    {
+        "email_news": "email_news",
+        "finalize_news": "finalize_news"
+    }
+)
+
 graph_builder.add_edge("email_news", "finalize_news")
 graph_builder.add_edge("finalize_news", END)
 

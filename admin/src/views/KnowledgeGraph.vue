@@ -151,10 +151,13 @@ watch(locale, () => {
         {{ t('knowledge_graph.refresh') }}
       </el-button>
     </div>
-    <div ref="chartContainer" class="flex-1 w-full min-h-[500px] border border-gray-200 rounded bg-white"></div>
+    <div ref="chartContainer" class="graph-container flex-1 w-full min-h-[500px] border border-gray-200 rounded bg-white"></div>
   </div>
 </template>
 
 <style scoped>
-/* Ensure the container takes full height */
+.graph-container{
+  width: 100%;
+  height: calc(100vh - 100px) !important;
+}
 </style>

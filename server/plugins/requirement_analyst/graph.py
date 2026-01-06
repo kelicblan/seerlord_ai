@@ -2,6 +2,8 @@ from typing import Dict, Any, List, Iterable, Tuple, Optional
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import asyncio
 
 from server.core.llm import get_llm
 from .state import RequirementAnalystState
@@ -403,6 +405,65 @@ async def parse_input(state: RequirementAnalystState, config: RunnableConfig) ->
         "messages": [AIMessage(content=progress_msg)]
     }
 
+MAX_CONTEXT_CHARS = 30000
+
+async def compress_content(text: str, config: RunnableConfig) -> str:
+    """
+    Compress large requirement documents by summarizing chunks.
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=12000,
+        chunk_overlap=500
+    )
+    chunks = splitter.split_text(text)
+    
+    if len(chunks) <= 1:
+        return text
+        
+    logger.info(f"Compressing content: {len(text)} chars -> {len(chunks)} chunks")
+    
+    summarized_chunks = []
+    
+    # Process chunks in batches to avoid rate limits
+    batch_size = 3
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i+batch_size]
+        tasks = []
+        for chunk in batch:
+            prompt = (
+                "You are an expert Requirement Analyst. "
+                "Please summarize the following section of a requirement document. "
+                "CRITICAL: Retain all functional requirements, business rules, user roles, and technical constraints. "
+                "Remove only filler words and redundant introductions. "
+                "Output in Markdown format.\n\n"
+                f"{chunk}"
+            )
+            tasks.append(llm.ainvoke([HumanMessage(content=prompt)], config))
+        
+        results = await asyncio.gather(*tasks)
+        for res in results:
+            summarized_chunks.append(res.content)
+            
+    compressed_text = "\n\n".join(summarized_chunks)
+    logger.info(f"Compression complete: {len(text)} -> {len(compressed_text)} chars")
+    return compressed_text
+
+async def optimize_context(state: RequirementAnalystState, config: RunnableConfig) -> Dict[str, Any]:
+    """
+    Node 1.5: Optimize context if content is too large.
+    """
+    content = state.get("parsed_content", "")
+    if len(content) > MAX_CONTEXT_CHARS:
+        msg = f"文档内容较长 ({len(content)} 字符)，正在进行智能压缩与提炼，请稍候..."
+        await llm.ainvoke([SystemMessage(content="You are a helpful assistant."), HumanMessage(content=f"Tell the user exactly this: {msg}")], config)
+        
+        compressed = await compress_content(content, config)
+        return {
+            "parsed_content": compressed,
+            "messages": [AIMessage(content="文档压缩完成，开始生成文档...")]
+        }
+    return {}
+
 async def generate_doc1(state: RequirementAnalystState, config: RunnableConfig) -> Dict[str, Any]:
     """
     Node 2: Generate Document 1 (Project Specs)
@@ -594,6 +655,7 @@ workflow = StateGraph(RequirementAnalystState)
 
 workflow.add_node("load_skills", skill_injector.load_skills_context)
 workflow.add_node("parse_input", parse_input)
+workflow.add_node("optimize_context", optimize_context)
 workflow.add_node("generate_doc1", generate_doc1)
 workflow.add_node("generate_doc2", generate_doc2)
 workflow.add_node("convert_and_finalize", convert_and_finalize)
@@ -604,10 +666,11 @@ workflow.add_edge("load_skills", "parse_input")
 # Edges
 def check_parse_success(state: RequirementAnalystState):
     if state.get("parsed_content") and not state["parsed_content"].startswith("Error"):
-        return "generate_doc1"
+        return "optimize_context"
     return END
 
-workflow.add_conditional_edges("parse_input", check_parse_success, {"generate_doc1": "generate_doc1", END: END})
+workflow.add_conditional_edges("parse_input", check_parse_success, {"optimize_context": "optimize_context", END: END})
+workflow.add_edge("optimize_context", "generate_doc1")
 workflow.add_edge("generate_doc1", "generate_doc2")
 workflow.add_edge("generate_doc2", "convert_and_finalize")
 workflow.add_edge("convert_and_finalize", END)

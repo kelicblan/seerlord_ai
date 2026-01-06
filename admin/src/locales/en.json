@@ -44,6 +44,7 @@
     "nav_knowledge_graph": "Knowledge Graph",
     "nav_content_plaza": "Agent Content Plaza",
     "nav_api_platform": "API Platform",
+    "workflow_orchestration": "Workflow Orchestration",
     "status_idle": "Idle",
     "status_running": "Running...",
     "status_Completed": "Completed",

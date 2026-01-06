@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { getPlugins, getAgentConfig, updateAgentConfig, type AgentPlugin } from '@/api/agent'
 import { getKnowledgeBases, type KnowledgeBase } from '@/api/knowledge'
 import { ElMessage } from 'element-plus'
-import { Edit, Refresh } from '@element-plus/icons-vue'
+import { Edit, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { load, dump } from 'js-yaml'
 import { useI18n } from 'vue-i18n'
@@ -213,10 +213,13 @@ onMounted(() => {
         </template>
       </ElTableColumn>
       <ElTableColumn prop="description" :label="t('agent_mgmt.header_desc')" />
-      <ElTableColumn :label="t('agent_mgmt.header_actions')" width="120" fixed="right">
+      <ElTableColumn :label="t('agent_mgmt.header_actions')" width="200" fixed="right">
         <template #default="{ row }">
           <ElButton link type="primary" :icon="Edit" @click="handleEditConfig(row)">
             {{ t('agent_mgmt.btn_config') }}
+          </ElButton>
+          <ElButton link type="success" :icon="VideoPlay" @click="$router.push(`/workflow/${row.id}`)">
+            查看逻辑
           </ElButton>
         </template>
       </ElTableColumn>

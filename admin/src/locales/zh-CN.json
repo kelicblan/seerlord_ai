@@ -44,6 +44,7 @@
     "nav_knowledge_graph": "知识图谱",
     "nav_content_plaza": "智能体内容广场",
     "nav_api_platform": "API 平台",
+    "workflow_orchestration": "工作流编排",
     "status_idle": "空闲",
     "status_running": "运行中...",
     "status_Completed": "已完成",

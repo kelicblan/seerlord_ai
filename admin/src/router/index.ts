@@ -37,6 +37,12 @@ const router = createRouter({
           meta: { title: 'common.nav_agent_mgmt' }
         },
         {
+          path: 'workflow/:id',
+          name: 'workflow',
+          component: () => import('@/views/WorkflowOrchestration.vue'),
+          meta: { title: 'common.workflow_orchestration' }
+        },
+        {
           path: 'automation',
           name: 'automation',
           component: () => import('@/views/Automation.vue'),

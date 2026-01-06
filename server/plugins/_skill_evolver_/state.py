@@ -15,6 +15,10 @@ class EvolverState(TypedDict):
     conversation_history: List[BaseMessage]
     related_skills: List[HierarchicalSkill]
     
+    # Refinement Input (Optional)
+    skill_to_refine: Optional[HierarchicalSkill]
+    execution_feedback: Optional[str]
+    
     # Internal
     reasoning_log: List[str]
     

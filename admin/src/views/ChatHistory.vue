@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Search } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
+import api from '@/api/axios'
 
 interface ChatSession {
   id: string
@@ -31,35 +32,48 @@ const totalSessions = ref(0)
 const fetchHistory = async () => {
   loading.value = true
   try {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500))
+    const skip = (currentPage.value - 1) * pageSize.value
+    const response = await api.get('/api/v1/chat/sessions', {
+        params: {
+            skip,
+            limit: pageSize.value
+        }
+    })
     
-    // Mock Data
-    const mockData: ChatSession[] = Array.from({ length: 15 }).map((_, i) => ({
-      id: `session-${i + 1}`,
-      thread_id: `web-test-${Date.now() - i * 1000000}`,
-      agent_name: i % 2 === 0 ? 'Research Agent' : 'Coding Assistant',
-      summary: i % 2 === 0 ? 'Analyzing market trends for AI startups...' : 'Refactoring the user management module...',
-      message_count: 5 + i,
-      created_at: new Date(Date.now() - i * 86400000).toLocaleString(),
-      updated_at: new Date(Date.now() - i * 3600000).toLocaleString()
+    const data = response.data
+    // Backend doesn't return total count yet, so pagination might be limited to "next page" style
+    // Or we assume if we got pageSize items, there might be more.
+    // For now, let's just show what we got.
+    // To support real pagination, backend needs to return total count.
+    
+    sessions.value = data.map((s: any) => ({
+        id: s.id,
+        thread_id: s.id,
+        agent_name: s.agent_id || 'Agent',
+        summary: s.title || 'No Title',
+        message_count: 0, // Not available yet
+        created_at: new Date(s.created_at).toLocaleString(),
+        updated_at: new Date(s.updated_at).toLocaleString()
     }))
 
-    // Filter by search
-    let filtered = mockData
+    // Filter by search (Frontend filtering for now as backend doesn't support search yet)
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase()
-      filtered = mockData.filter(s => 
+      sessions.value = sessions.value.filter(s => 
         s.thread_id.toLowerCase().includes(q) || 
         s.summary.toLowerCase().includes(q) ||
         s.agent_name.toLowerCase().includes(q)
       )
     }
 
-    // Pagination
-    totalSessions.value = filtered.length
-    const start = (currentPage.value - 1) * pageSize.value
-    sessions.value = filtered.slice(start, start + pageSize.value)
+    // Since we are paginating on backend, totalSessions is unknown. 
+    // We can set it to a large number if full page, or just hide pagination if we don't have count.
+    // Let's set it to at least current page * pageSize if we have data.
+    if (sessions.value.length === pageSize.value) {
+        totalSessions.value = (currentPage.value + 1) * pageSize.value
+    } else {
+        totalSessions.value = (currentPage.value - 1) * pageSize.value + sessions.value.length
+    }
     
   } catch (error) {
     console.error('Failed to fetch history:', error)

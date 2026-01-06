@@ -16,3 +16,7 @@ class VoyagerState(TypedDict):
     current_skill: HierarchicalSkill
     skill_match_reason: str
     execution_result: str
+    
+    # Optimization
+    needs_refinement: bool
+    critic_feedback: str
