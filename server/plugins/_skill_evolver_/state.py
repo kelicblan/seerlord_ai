@@ -12,6 +12,7 @@ class EvolverState(TypedDict):
     
     # Input
     task: str # e.g. "analyze_failure", "refine_skill"
+    agent_description: str # Added agent context
     conversation_history: List[BaseMessage]
     related_skills: List[HierarchicalSkill]
     

@@ -1,3 +1,3 @@
-from .plugin import PPTGeneratorPlugin
+from .plugin import plugin
 
-__all__ = ["PPTGeneratorPlugin"]
+__all__ = ["plugin"]

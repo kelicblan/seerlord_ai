@@ -12,6 +12,7 @@ from server.core.llm import get_llm
 from server.models.artifact import AgentArtifact
 from server.core.database import SessionLocal
 from server.kernel.skill_integration import skill_injector
+from server.memory.tools import memory_node
 
 from .state import ComicState
 from .schema import ComicBook, CourseSyllabus
@@ -36,10 +37,14 @@ async def generate_syllabus(state: ComicState):
     structured_llm = llm.with_structured_output(CourseSyllabus)
     
     skills = state.get("skills_context", "")
+    memory_context = state.get("memory_context", "")
     
     prompt = f"""You are an expert Curriculum Designer (The Teacher) for a "Comic Learning Course".
     
     User Request: {query}
+    
+    [Memory Context]:
+    {memory_context}
     
     [Expert Skills & Guidelines]:
     {skills}
@@ -286,6 +291,7 @@ async def synthesize_pages(state: ComicState):
 comic_graph = StateGraph(ComicState)
 
 comic_graph.add_node("load_skills", skill_injector.load_skills_context)
+comic_graph.add_node("memory_load", memory_node)
 comic_graph.add_node("analyze_request", analyze_request)
 comic_graph.add_node("generate_syllabus", generate_syllabus)
 comic_graph.add_node("generate_storyboard", generate_storyboard)
@@ -293,7 +299,8 @@ comic_graph.add_node("generate_assets", generate_assets)
 comic_graph.add_node("synthesize_pages", synthesize_pages)
 
 comic_graph.set_entry_point("load_skills")
-comic_graph.add_edge("load_skills", "analyze_request")
+comic_graph.add_edge("load_skills", "memory_load")
+comic_graph.add_edge("memory_load", "analyze_request")
 
 comic_graph.add_edge("analyze_request", "generate_syllabus")
 comic_graph.add_edge("generate_syllabus", "generate_storyboard")

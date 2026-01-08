@@ -4,7 +4,7 @@ from langchain_core.tools import StructuredTool
 from loguru import logger
 
 from server.kernel.skill_service import skill_service
-from server.kernel.hierarchical_skills import HierarchicalSkill
+from server.kernel.hierarchical_skills import HierarchicalSkill, GLOBAL_SKILL_TENANT_ID
 
 class SkillInjector:
     """
@@ -32,11 +32,18 @@ class SkillInjector:
                 break
         
         # 2. Extract Context
-        tenant_id = state.get("tenant_id", "default")
+        # Force GLOBAL tenant for skill loading
+        tenant_id = GLOBAL_SKILL_TENANT_ID
         user_id = state.get("user_id")
+        agent_description = state.get("agent_description", "")
         
         # 3. Retrieve Skills (with Evolution)
-        skills = await skill_service.retrieve_skills_for_query(query, tenant_id=tenant_id, user_id=user_id)
+        skills = await skill_service.retrieve_skills_for_query(
+            query, 
+            tenant_id=tenant_id, 
+            user_id=user_id, 
+            agent_description=agent_description
+        )
         
         if not skills:
             return {}

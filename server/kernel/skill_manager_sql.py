@@ -9,7 +9,7 @@ from qdrant_client.http import models
 from server.core.config import settings
 from server.core.database import SessionLocal
 from server.db.models import Skill as SkillModel, SkillLevelEnum, SkillHistory
-from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent
+from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent, GLOBAL_SKILL_TENANT_ID
 from server.memory.storage import VectorStoreManager
 from server.memory.schemas import MemoryItem, MemoryType
 from server.core.llm import get_embeddings
@@ -43,12 +43,27 @@ class SQLSkillManager:
         async with SessionLocal() as db:
             try:
                 # 1. Save to PostgreSQL
-                # Check if exists
+                # Check if exists by ID
                 result = await db.execute(select(SkillModel).where(SkillModel.id == skill.id))
                 existing = result.scalars().first()
+
+                # If not found by ID, check by Name (Deduplication)
+                if not existing:
+                    # Ignore tenant_id, search globally by name
+                    name_check = await db.execute(select(SkillModel).where(
+                        SkillModel.name == skill.name
+                    ))
+                    existing_by_name = name_check.scalars().first()
+                    
+                    if existing_by_name:
+                        logger.warning(f"Skill with name '{skill.name}' already exists (ID: {existing_by_name.id}). Merging/Updating instead of creating duplicate.")
+                        existing = existing_by_name
+                        # Update the input skill object's ID to match the existing one
+                        # This ensures Qdrant updates the correct vector instead of creating a new one
+                        skill.id = existing.id
                 
                 if existing:
-                    logger.info(f"Skill {skill.name} already exists, creating history snapshot and updating...")
+                    logger.info(f"Skill {skill.name} already exists (ID: {existing.id}), creating history snapshot and updating...")
                     
                     # Create History Snapshot
                     current_version = existing.version or 1
@@ -95,7 +110,7 @@ class SQLSkillManager:
                     "skill_id": skill.id,
                     "name": skill.name,
                     "level": skill.level.value,
-                    "tenant_id": tenant_id
+                    "tenant_id": GLOBAL_SKILL_TENANT_ID # Force GLOBAL for vector store
                 }
                 if user_id:
                     metadata["user_id"] = user_id
@@ -159,11 +174,12 @@ class SQLSkillManager:
 
             # 2. Search in Qdrant
             # We search specifically for skills in the "global_skills_repo" session
+            # REMOVED tenant_id filter completely to search ALL skills
             candidates = await self.storage.search(
                 query_vector=query_vector, 
                 limit=3,
                 score_threshold=min_score,
-                filter_dict={"type": MemoryType.SKILL.value, "tenant_id": tenant_id}
+                filter_dict={"type": MemoryType.SKILL.value}
             )
             
             skill_ids = []
@@ -202,7 +218,7 @@ class SQLSkillManager:
 
         except Exception as e:
             logger.error(f"Retrieval failed: {e}")
-            return None, f"Error: {e}"
+            return self._get_default_meta_skill(), f"Error: {e}"
 
     async def retrieve_related_skills(self, query: str, tenant_id: str, limit: int = 5, score_threshold: float = 0.6) -> List[HierarchicalSkill]:
         """
@@ -212,11 +228,12 @@ class SQLSkillManager:
 
         try:
             query_vector = await self.embeddings.aembed_query(query)
+            # Force GLOBAL tenant search (Actually removing tenant filter)
             candidates = await self.storage.search(
                 query_vector=query_vector, 
                 limit=limit,
                 score_threshold=score_threshold,
-                filter_dict={"type": MemoryType.SKILL.value, "tenant_id": tenant_id}
+                filter_dict={"type": MemoryType.SKILL.value}
             )
             
             skill_ids = [item.metadata["skill_id"] for item in candidates if "skill_id" in item.metadata]

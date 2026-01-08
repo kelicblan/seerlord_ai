@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import select
 
-from server.kernel.hierarchical_skills import HierarchicalSkill, SkillContent, SkillLevel
+from server.kernel.hierarchical_skills import HierarchicalSkill, SkillContent, SkillLevel, GLOBAL_SKILL_TENANT_ID
 from server.kernel.dynamic_skill_manager import dynamic_skill_manager
 from server.core.database import SessionLocal
 from server.db.models import Skill as SkillModel, SkillHistory
@@ -57,6 +57,7 @@ class SkillService:
         """
         async with SessionLocal() as db:
             try:
+                # No longer filtering by tenant, treating all as global/shared
                 result = await db.execute(select(SkillModel))
                 db_skills = result.scalars().all()
                 return [self._convert_to_legacy_skill(s) for s in db_skills]
@@ -76,7 +77,11 @@ class SkillService:
         """Legacy method to get skill by ID."""
         async with SessionLocal() as db:
             try:
-                result = await db.execute(select(SkillModel).where(SkillModel.id == skill_id))
+                result = await db.execute(
+                    select(SkillModel).where(
+                        SkillModel.id == skill_id
+                    )
+                )
                 db_skill = result.scalars().first()
                 if db_skill:
                     return self._convert_to_legacy_skill(db_skill)
@@ -167,13 +172,9 @@ class SkillService:
         )
         
         try:
-            # We assume tenant_id="default" for manually created skills via Admin UI
-            # However, if "default" tenant doesn't exist, we should use "tenant-admin" which is the fallback default.
-            # Ideally this should come from context, but SkillService is a singleton.
-            # Let's try "default" first, if it fails, try "tenant-admin" or ensure "default" exists.
-            # But since we are inside a try-catch, maybe just use "tenant-admin" if that's what the system uses.
-            # The logs showed "tenant-admin" is the authorized context.
-            await self.manager.skill_manager.add_skill(h_skill, tenant_id="tenant-admin")
+            # Force GLOBAL tenant for all skills (though technically we are removing distinction)
+            # We still need to pass a tenant_id to DB, so we keep using GLOBAL_SKILL_TENANT_ID as the system default
+            await self.manager.skill_manager.add_skill(h_skill, tenant_id=GLOBAL_SKILL_TENANT_ID)
             return True
         except Exception as e:
             logger.error(f"Failed to create skill: {e}")
@@ -208,7 +209,7 @@ class SkillService:
         )
 
         try:
-            await self.manager.skill_manager.add_skill(h_skill, tenant_id="tenant-admin") # add_skill handles upsert
+            await self.manager.skill_manager.add_skill(h_skill, tenant_id=GLOBAL_SKILL_TENANT_ID) # add_skill handles upsert
             return True
         except Exception as e:
             logger.error(f"Failed to update skill: {e}")
@@ -242,17 +243,23 @@ class SkillService:
             version=1
         )
 
-    async def retrieve_skills_for_query(self, query: str, category: str = None, tenant_id: str = "default", user_id: str = None) -> List[HierarchicalSkill]:
+    async def retrieve_skills_for_query(self, query: str, category: str = None, tenant_id: str = "default", user_id: str = None, agent_description: str = "") -> List[HierarchicalSkill]:
         """
         Retrieves skills using the real DynamicSkillManager.
         This includes automatic evolution if no specific skills are found.
         """
         try:
             # 1. Ensure we have at least one good skill (triggers evolution if needed)
-            best_skill, reason = await self.manager.get_or_evolve_skill(query, tenant_id=tenant_id, user_id=user_id)
+            # Use GLOBAL_SKILL_TENANT_ID for retrieval
+            best_skill, reason = await self.manager.get_or_evolve_skill(
+                query, 
+                tenant_id=GLOBAL_SKILL_TENANT_ID, 
+                user_id=user_id,
+                agent_description=agent_description
+            )
             
             # 2. Get related skills (Context expansion)
-            related = await self.manager.skill_manager.retrieve_related_skills(query, tenant_id=tenant_id, limit=5)
+            related = await self.manager.skill_manager.retrieve_related_skills(query, tenant_id=GLOBAL_SKILL_TENANT_ID, limit=5)
             
             # 3. Merge and deduplicate
             skills_map = {s.id: s for s in related}

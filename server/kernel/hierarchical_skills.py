@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 import uuid
 from datetime import datetime
 
+GLOBAL_SKILL_TENANT_ID = "global"
+
 class SkillLevel(str, Enum):
     SPECIFIC = "specific"   # L1: 具体技能 (e.g., LearnEnglish)
     DOMAIN = "domain"       # L2: 领域技能 (e.g., LearnLanguage)

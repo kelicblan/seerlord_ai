@@ -5,12 +5,13 @@ from duckduckgo_search import DDGS
 mcp = FastMCP("News Service")
 
 @mcp.tool()
-def search_global_news(query: str = "global major news") -> str:
+def search_global_news(query: str = "global major news", count: int = 10) -> str:
     """
     Searches for global major news from the last 24 hours using DuckDuckGo.
     
     Args:
         query: The search query (default: "global major news").
+        count: The number of results to return (default: 10).
         
     Returns:
         A string containing a list of news items with titles, bodies, and URLs.
@@ -21,14 +22,14 @@ def search_global_news(query: str = "global major news") -> str:
         # region: wt-wt (World)
         # safesearch: on
         # timelimit: d (day - last 24 hours)
-        # max_results: 10
+        # max_results: count
         with DDGS() as ddgs:
             ddgs_news = ddgs.news(
                 keywords=query,
                 region="wt-wt",
                 safesearch="on",
                 timelimit="d",
-                max_results=10
+                max_results=count
             )
             for r in ddgs_news:
                 results.append(f"Title: {r.get('title')}\nSource: {r.get('source')}\nDate: {r.get('date')}\nLink: {r.get('url')}\nSummary: {r.get('body')}\n")

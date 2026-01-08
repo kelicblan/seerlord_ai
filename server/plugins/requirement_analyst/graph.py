@@ -12,6 +12,7 @@ from server.core.database import SessionLocal
 from server.models.artifact import AgentArtifact
 from server.kernel.mcp_manager import mcp_manager
 from server.kernel.skill_integration import skill_injector
+from server.memory.tools import memory_node
 import uuid
 import yaml
 import os
@@ -654,6 +655,7 @@ async def convert_and_finalize(state: RequirementAnalystState, config: RunnableC
 workflow = StateGraph(RequirementAnalystState)
 
 workflow.add_node("load_skills", skill_injector.load_skills_context)
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("parse_input", parse_input)
 workflow.add_node("optimize_context", optimize_context)
 workflow.add_node("generate_doc1", generate_doc1)
@@ -661,7 +663,8 @@ workflow.add_node("generate_doc2", generate_doc2)
 workflow.add_node("convert_and_finalize", convert_and_finalize)
 
 workflow.set_entry_point("load_skills")
-workflow.add_edge("load_skills", "parse_input")
+workflow.add_edge("load_skills", "memory_load")
+workflow.add_edge("memory_load", "parse_input")
 
 # Edges
 def check_parse_success(state: RequirementAnalystState):

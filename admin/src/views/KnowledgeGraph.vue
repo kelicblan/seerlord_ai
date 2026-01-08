@@ -124,7 +124,9 @@ const initChart = async () => {
 }
 
 onMounted(() => {
-  initChart()
+  setTimeout(() => {
+    initChart()
+  }, 200)
   window.addEventListener('resize', resizeChart)
 })
 
@@ -151,13 +153,13 @@ watch(locale, () => {
         {{ t('knowledge_graph.refresh') }}
       </el-button>
     </div>
-    <div ref="chartContainer" class="graph-container flex-1 w-full min-h-[500px] border border-gray-200 rounded bg-white"></div>
+    <div ref="chartContainer" class="graph-container border border-gray-200 rounded bg-white"></div>
   </div>
 </template>
 
 <style scoped>
 .graph-container{
   width: 100%;
-  height: calc(100vh - 100px) !important;
+  height: calc(100vh - 120px) !important;
 }
 </style>

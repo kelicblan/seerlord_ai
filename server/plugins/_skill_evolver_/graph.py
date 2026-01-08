@@ -17,10 +17,16 @@ async def analyze_gap(state: EvolverState) -> Dict[str, Any]:
     """Analyze the conversation history to identify skill gaps."""
     llm = get_llm(temperature=0.3)
     
+    agent_description = state.get("agent_description", "Generic Agent")
+    
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are an expert Skill Architect. Analyze the conversation to identify why the current skills were insufficient."),
         ("human", """
-        Task: {task}
+        You are designing a skill for an Agent described as: 
+        "{agent_desc}"
+        
+        The user asked: 
+        "{task}"
         
         Conversation History:
         {history}
@@ -28,7 +34,8 @@ async def analyze_gap(state: EvolverState) -> Dict[str, Any]:
         Related Skills Available:
         {skills}
         
-        Output your analysis of the missing knowledge or capability.
+        Analyze what specific cognitive capability or procedural knowledge is missing for THIS SPECIFIC AGENT to answer the user's request.
+        Ignore trivial output formats (like "send email") unless it's the core function. Focus on the core reasoning or data processing task.
         """)
     ])
     
@@ -39,6 +46,7 @@ async def analyze_gap(state: EvolverState) -> Dict[str, Any]:
     skills_text = "\n".join([f"- {s.name} ({s.level}): {s.description}" for s in state["related_skills"]])
     
     response = await chain.ainvoke({
+        "agent_desc": agent_description,
         "task": state["task"],
         "history": history_text,
         "skills": skills_text
@@ -50,17 +58,25 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
     """Draft a new HierarchicalSkill based on analysis."""
     llm = get_llm(temperature=0.1)
     
+    agent_description = state.get("agent_description", "Generic Agent")
+    
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert Skill Architect. Create a structured Skill definition.
         Return ONLY a JSON object compatible with the HierarchicalSkill schema.
         
         Schema Rules:
-        - name: PascalCase (e.g., CalculateTax)
+        - name: PascalCase (e.g., AnalyzeTechTrends)
         - level: "specific" (L1) or "domain" (L2)
         - description: Concise summary for semantic search.
         - content: 
             - prompt_template: The system prompt for the agent performing this skill.
             - knowledge_base: List of key facts/rules.
+            
+        CRITICAL GUIDELINES:
+        1. The 'prompt_template' MUST be designed for an Agent with this description: "{agent_desc}".
+        2. It should guide the Agent to solve the user's specific request: "{task}".
+        3. Do NOT include generic instructions like "You are a helpful assistant". Use the specific persona.
+        4. Focus on HOW to think, analyze, or process data, not just on formatting the output.
         """),
         ("human", """
         Analysis:
@@ -73,7 +89,11 @@ async def draft_skill(state: EvolverState) -> Dict[str, Any]:
     chain = prompt | llm
     
     analysis = state["reasoning_log"][-1]
-    response = await chain.ainvoke({"analysis": analysis})
+    response = await chain.ainvoke({
+        "agent_desc": agent_description,
+        "task": state["task"],
+        "analysis": analysis
+    })
     
     return _parse_skill_response(response.content, parent_id=None)
 

@@ -630,7 +630,48 @@ export function useAgent() {
               
               // --- 5. Custom Events (Skills) ---
               else if (eventType === 'on_custom_event') {
-                if (eventName === 'skill_usage') {
+                if (eventName === 'skill_retrieved') {
+                   const data = eventData.data
+                   if (data) {
+                      addLog('SKILL', `Retrieved skill: ${data.name} (${data.reason})`)
+                      
+                      // Add to usedSkills list if not exists
+                      if (!skillExecutionData.value.usedSkills.find(s => s.id === data.id)) {
+                          skillExecutionData.value.usedSkills.push({
+                              id: data.id,
+                              name: data.name,
+                              level: data.level
+                          })
+                          
+                          // Store details directly since we have them
+                          skillExecutionData.value.usedSkillDetails[data.id] = {
+                              description: data.description,
+                              content: "Loaded from retrieval" // Placeholder or we need content from backend
+                          }
+                      }
+                   }
+                }
+                else if (eventName === 'skill_evolved') {
+                   const data = eventData.data
+                   if (data) {
+                      skillExecutionData.value.evolutions.push({
+                          skill_id: data.id || 'unknown',
+                          skill_name: data.name,
+                          change: 'Created new skill'
+                      })
+                      addLog('EVOLVE', `Skill evolved: ${data.name}`)
+                      // Show global notification
+                      import('element-plus').then(({ ElNotification }) => {
+                        ElNotification({
+                          title: 'Skill Evolved!',
+                          message: `${data.name} has been updated based on this interaction.`,
+                          type: 'success',
+                          duration: 5000
+                        })
+                      })
+                   }
+                }
+                else if (eventName === 'skill_usage') {
                    const data = eventData.data
                    if (data && data.used_skills) {
                       skillExecutionData.value.usedSkills = data.used_skills
@@ -659,6 +700,7 @@ export function useAgent() {
                    }
                 }
                 else if (eventName === 'skill_evolution') {
+                   // Legacy handler
                    const data = eventData.data
                    if (data) {
                       skillExecutionData.value.evolutions.push(data)

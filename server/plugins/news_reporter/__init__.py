@@ -1,1 +1,3 @@
-from .plugin import NewsReporterPlugin
+from .plugin import plugin
+
+__all__ = ["plugin"]

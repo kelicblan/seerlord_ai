@@ -21,7 +21,7 @@ class MailServicePlugin(AgentPlugin):
 
     @property
     def enable_skills(self) -> bool:
-        return True
+        return False
 
     def get_graph(self) -> Runnable:
         return app

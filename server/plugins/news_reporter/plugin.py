@@ -1,6 +1,5 @@
 from langchain_core.runnables import Runnable
 from server.kernel.interface import AgentPlugin
-from .graph import app
 import os
 
 class NewsReporterPlugin(AgentPlugin):
@@ -17,13 +16,14 @@ class NewsReporterPlugin(AgentPlugin):
 
     @property
     def description(self) -> str:
-        return "Fetches real-time tech news from NewsMinimalist, translates, and emails a briefing."
+        return "Fetches real-time global news, translates, and emails a briefing."
 
     @property
     def enable_skills(self) -> bool:
         return True
 
     def get_graph(self) -> Runnable:
+        from .graph import app
         return app
 
     def get_critique_instructions(self) -> str:

@@ -11,6 +11,7 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 from server.core.llm import get_llm
 from server.kernel.skill_service import skill_service
 from server.kernel.skill_integration import skill_injector
+from server.memory.tools import memory_node
 from .tools import generate_image_base64
 
 from .schema import CourseOutline, LessonContent, OfflineCoursePackage
@@ -894,6 +895,7 @@ async def generate_offline_course_package(state: TutorialState):
 
     # 1. 检索技能 (已由 SkillInjector 注入)
     skills_context = state.get("skills_context", "")
+    memory_context = state.get("memory_context", "")
     used_ids = state.get("used_skill_ids", [])
     
     # 这里的 skills_context 已经是格式化好的 Prompt 字符串
@@ -914,6 +916,9 @@ async def generate_offline_course_package(state: TutorialState):
 2) 每个课时必须能独立学习：有类比解释、白话解释、关键术语、常见误解、例子、练习、成果校验。
 3) 成果校验必须包含可本地自动评分的选择题（含正确答案索引和解析），以及简答题（含参考要点+自评清单）。
 4) 输出必须是结构化数据（严格匹配 schema），不要输出多余文本。
+
+[Memory Context]:
+{memory_context}
 
 高优先级技能（必须遵守）：
 {skills_context}
@@ -1186,12 +1191,14 @@ async def collect_feedback(state: TutorialState):
 
 tutorial_graph = StateGraph(TutorialState)
 tutorial_graph.add_node("load_skills", skill_injector.load_skills_context)
+tutorial_graph.add_node("memory_load", memory_node)
 tutorial_graph.add_node("analyze_intent", analyze_intent)
 tutorial_graph.add_node("generate_content", generate_offline_course_package)
 tutorial_graph.add_node("collect_feedback", collect_feedback)
 
 tutorial_graph.set_entry_point("load_skills")
-tutorial_graph.add_edge("load_skills", "analyze_intent")
+tutorial_graph.add_edge("load_skills", "memory_load")
+tutorial_graph.add_edge("memory_load", "analyze_intent")
 tutorial_graph.add_edge("analyze_intent", "generate_content")
 tutorial_graph.add_edge("generate_content", "collect_feedback")
 tutorial_graph.add_edge("collect_feedback", END)

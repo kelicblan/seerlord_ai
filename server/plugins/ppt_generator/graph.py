@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from server.core.llm import get_llm
 from .state import PPTGeneratorState
 from .tools import generate_ppt
+from server.memory.tools import memory_node
 from server.kernel.skill_integration import skill_injector
 import yaml
 import os
@@ -140,11 +141,13 @@ def route_next(state: PPTGeneratorState):
 workflow = StateGraph(PPTGeneratorState)
 
 workflow.add_node("load_skills", skill_injector.load_skills_context)
+workflow.add_node("memory_load", memory_node)
 workflow.add_node("analyze_and_generate", analyze_and_generate)
 workflow.add_node("execute_tools", execute_tools)
 
 workflow.set_entry_point("load_skills")
-workflow.add_edge("load_skills", "analyze_and_generate")
+workflow.add_edge("load_skills", "memory_load")
+workflow.add_edge("memory_load", "analyze_and_generate")
 
 workflow.add_conditional_edges(
     "analyze_and_generate",

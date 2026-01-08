@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 from server.kernel.skill_manager_sql import SQLSkillManager
-from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel
+from server.kernel.hierarchical_skills import HierarchicalSkill, SkillLevel, SkillContent, GLOBAL_SKILL_TENANT_ID
 from server.plugins._skill_evolver_.plugin import get_agent as get_evolver_agent
 
 class DynamicSkillManager:
@@ -21,7 +21,7 @@ class DynamicSkillManager:
             cls._instance.evolver_app = get_evolver_agent()
         return cls._instance
 
-    async def get_or_evolve_skill(self, query: str, tenant_id: str, user_id: str = None, agent_name: str = "system_skill_manager", conversation_history: List = None) -> Tuple[HierarchicalSkill, str]:
+    async def get_or_evolve_skill(self, query: str, tenant_id: str, user_id: str = None, agent_name: str = "system_skill_manager", agent_description: str = "", conversation_history: List = None) -> Tuple[HierarchicalSkill, str]:
         """
         Main logic:
         1. Try to find a Specific (L1) or Domain (L2) skill using SQLSkillManager.
@@ -29,17 +29,32 @@ class DynamicSkillManager:
         3. If evolution succeeds, persist the new skill to SQL/Chroma.
         4. Return the best available skill.
         """
+        # Force GLOBAL tenant
+        tenant_id = GLOBAL_SKILL_TENANT_ID
+        
         logger.info(f"🔍 Searching skill for query: '{query}' (Tenant: {tenant_id}, User: {user_id}, Agent: {agent_name})")
         
         # 1. Retrieval
         best_skill, reason = await self.skill_manager.retrieve_best_skill(query, tenant_id=tenant_id, user_id=user_id, agent_name=agent_name)
+        
+        if not best_skill:
+            logger.warning(f"⚠️ retrieve_best_skill returned None. Reason: {reason}. Using emergency fallback.")
+            best_skill = HierarchicalSkill(
+                name="EmergencyFallback",
+                description="System encountered an error retrieving skills.",
+                level=SkillLevel.META,
+                content=SkillContent(prompt_template="Solve: {task}", knowledge_base=[])
+            )
+            
         logger.info(f"✅ Found: {best_skill.name} ({best_skill.level}) - {reason}")
         
         await adispatch_custom_event(
             "skill_retrieved", 
             {
+                "id": best_skill.id,
                 "name": best_skill.name,
                 "level": best_skill.level.value,
+                "description": best_skill.description,
                 "reason": reason
             }
         )
@@ -54,6 +69,7 @@ class DynamicSkillManager:
             # Prepare context for Evolver
             evolver_input = {
                 "task": query,
+                "agent_description": agent_description, # Pass agent context
                 "conversation_history": conversation_history or [HumanMessage(content=query)],
                 "related_skills": [best_skill], # Pass the meta skill as context
                 "reasoning_log": []
@@ -73,6 +89,7 @@ class DynamicSkillManager:
                     await adispatch_custom_event(
                         "skill_evolved",
                         {
+                            "id": new_skill.id,
                             "name": new_skill.name,
                             "level": new_skill.level.value,
                             "description": new_skill.description
@@ -91,6 +108,9 @@ class DynamicSkillManager:
         """
         Trigger the evolver to refine an existing skill based on execution feedback.
         """
+        # Force GLOBAL tenant
+        tenant_id = GLOBAL_SKILL_TENANT_ID
+
         logger.info(f"🔧 Refining skill: {skill.name} based on feedback...")
         
         # Prepare context for Evolver
