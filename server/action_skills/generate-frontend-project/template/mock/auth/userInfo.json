@@ -1,0 +1,14 @@
+{
+  "code": 0,
+  "data": {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@example.com",
+    "phone": "13800138000",
+    "status": 1,
+    "roles": [{"id": 1, "name": "管理员"}],
+    "deptId": 1,
+    "createTime": "2024-01-01 10:00:00"
+  },
+  "message": "获取成功"
+}

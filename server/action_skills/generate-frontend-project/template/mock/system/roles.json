@@ -1,0 +1,24 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {"id": 1, "name": "超级管理员", "code": "super_admin", "description": "拥有系统所有权限", "status": 1, "sort": 1, "createTime": "2024-01-01 00:00:00", "menuIds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+      {"id": 2, "name": "产品经理", "code": "product_manager", "description": "负责产品规划与设计", "status": 1, "sort": 2, "createTime": "2024-01-05 00:00:00", "menuIds": [1, 2, 3, 11, 12]},
+      {"id": 3, "name": "市场专员", "code": "marketing_staff", "description": "负责市场推广活动", "status": 1, "sort": 3, "createTime": "2024-01-08 00:00:00", "menuIds": [1, 13, 14, 15]},
+      {"id": 4, "name": "前端开发", "code": "frontend_dev", "description": "负责前端页面开发", "status": 1, "sort": 4, "createTime": "2024-01-10 00:00:00", "menuIds": [1, 2, 16, 17]},
+      {"id": 5, "name": "后端开发", "code": "backend_dev", "description": "负责后端接口开发", "status": 1, "sort": 5, "createTime": "2024-01-12 00:00:00", "menuIds": [1, 2, 18, 19]},
+      {"id": 6, "name": "UI设计师", "code": "ui_designer", "description": "负责界面视觉设计", "status": 1, "sort": 6, "createTime": "2024-01-15 00:00:00", "menuIds": [1, 2, 20, 21]},
+      {"id": 7, "name": "HR专员", "code": "hr_staff", "description": "负责人力资源管理", "status": 1, "sort": 7, "createTime": "2024-01-18 00:00:00", "menuIds": [1, 22, 23, 24]},
+      {"id": 8, "name": "财务专员", "code": "finance_staff", "description": "负责财务核算管理", "status": 1, "sort": 8, "createTime": "2024-01-20 00:00:00", "menuIds": [1, 25, 26, 27]},
+      {"id": 9, "name": "测试工程师", "code": "qa_engineer", "description": "负责软件测试工作", "status": 1, "sort": 9, "createTime": "2024-01-25 00:00:00", "menuIds": [1, 28, 29, 30]},
+      {"id": 10, "name": "客服专员", "code": "customer_service", "description": "负责客户服务支持", "status": 1, "sort": 10, "createTime": "2024-01-28 00:00:00", "menuIds": [1, 31, 32, 33]},
+      {"id": 11, "name": "运营专员", "code": "operations_staff", "description": "负责平台运营工作", "status": 1, "sort": 11, "createTime": "2024-02-01 00:00:00", "menuIds": [1, 34, 35, 36]},
+      {"id": 12, "name": "招聘专员", "code": "recruiter", "description": "负责人才招聘工作", "status": 1, "sort": 12, "createTime": "2024-02-05 00:00:00", "menuIds": [1, 22, 37, 38]},
+      {"id": 13, "name": "市场总监", "code": "marketing_director", "description": "负责市场营销管理", "status": 1, "sort": 13, "createTime": "2024-02-08 00:00:00", "menuIds": [1, 13, 14, 15, 39, 40]},
+      {"id": 14, "name": "交互设计师", "code": "ux_designer", "description": "负责用户体验设计", "status": 1, "sort": 14, "createTime": "2024-02-10 00:00:00", "menuIds": [1, 2, 20, 41, 42]},
+      {"id": 15, "name": "运维工程师", "code": "devops_engineer", "description": "负责系统运维工作", "status": 1, "sort": 15, "createTime": "2024-02-12 00:00:00", "menuIds": [1, 43, 44, 45, 46]}
+    ],
+    "total": 15
+  },
+  "message": "获取成功"
+}

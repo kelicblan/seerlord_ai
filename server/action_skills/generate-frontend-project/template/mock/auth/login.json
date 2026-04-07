@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "data": {
+    "token": "mock-token-12345",
+    "userName": "系统管理员",
+    "userId": 1,
+    "roles": ["admin"],
+    "permissions": ["*"]
+  },
+  "message": "登录成功"
+}

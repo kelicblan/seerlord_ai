@@ -1,0 +1,134 @@
+{
+  "project_name": "AMS资产管理系统",
+  "tech_stack": {
+    "framework": "Vue 3.5+",
+    "build": "Vite 6.x",
+    "ui": "Element Plus",
+    "css": "Tailwind CSS 4.x",
+    "state": "Pinia 2.x",
+    "router": "Vue Router 4.x",
+    "utils": "@vueuse/core"
+  },
+  "pages_expected": [
+    {
+      "path": "/login",
+      "route_name": "login",
+      "component": "Login.vue",
+      "module": "auth"
+    },
+    {
+      "path": "/asset/list",
+      "route_name": "asset-list",
+      "component": "AssetList.vue",
+      "module": "asset"
+    },
+    {
+      "path": "/asset/detail/:id",
+      "route_name": "asset-detail",
+      "component": "AssetDetail.vue",
+      "module": "asset"
+    },
+    {
+      "path": "/asset/create",
+      "route_name": "asset-create",
+      "component": "AssetCreate.vue",
+      "module": "asset"
+    },
+    {
+      "path": "/asset/edit/:id",
+      "route_name": "asset-edit",
+      "component": "AssetEdit.vue",
+      "module": "asset"
+    },
+    {
+      "path": "/inventory/list",
+      "route_name": "inventory-list",
+      "component": "InventoryList.vue",
+      "module": "inventory"
+    },
+    {
+      "path": "/inventory/task/detail/:id",
+      "route_name": "inventory-task-detail",
+      "component": "InventoryTaskDetail.vue",
+      "module": "inventory"
+    },
+    {
+      "path": "/user/list",
+      "route_name": "user-list",
+      "component": "UserList.vue",
+      "module": "user"
+    }
+  ],
+  "api_modules_expected": [
+    {
+      "name": "auth",
+      "module": "auth",
+      "endpoints": ["/api/auth/login", "/api/auth/logout", "/api/auth/userinfo"]
+    },
+    {
+      "name": "asset",
+      "module": "asset",
+      "endpoints": ["/api/asset/list", "/api/asset/detail/:id", "/api/asset/create", "/api/asset/update/:id", "/api/asset/delete/:id"]
+    },
+    {
+      "name": "inventory",
+      "module": "inventory",
+      "endpoints": ["/api/inventory/list", "/api/inventory/task/detail/:id"]
+    },
+    {
+      "name": "user",
+      "module": "user",
+      "endpoints": ["/api/user/list", "/api/user/detail/:id", "/api/user/create"]
+    }
+  ],
+  "stores_expected": [
+    {
+      "name": "auth",
+      "module": "auth",
+      "file_path": "src/stores/auth.ts"
+    },
+    {
+      "name": "asset",
+      "module": "asset",
+      "file_path": "src/stores/asset.ts"
+    },
+    {
+      "name": "inventory",
+      "module": "inventory",
+      "file_path": "src/stores/inventory.ts"
+    },
+    {
+      "name": "user",
+      "module": "user",
+      "file_path": "src/stores/user.ts"
+    }
+  ],
+  "composables_expected": [
+    {
+      "name": "useAuth",
+      "module": "auth",
+      "file_path": "src/composables/useAuth.ts"
+    },
+    {
+      "name": "useAsset",
+      "module": "asset",
+      "file_path": "src/composables/useAsset.ts"
+    },
+    {
+      "name": "useInventory",
+      "module": "inventory",
+      "file_path": "src/composables/useInventory.ts"
+    },
+    {
+      "name": "useUser",
+      "module": "user",
+      "file_path": "src/composables/useUser.ts"
+    }
+  ],
+  "summary": {
+    "total_pages": 8,
+    "total_api_modules": 4,
+    "total_stores": 4,
+    "total_composables": 4
+  }
+}

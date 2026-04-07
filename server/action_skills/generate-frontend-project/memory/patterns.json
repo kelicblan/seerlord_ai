@@ -1,0 +1,40 @@
+{
+  "patterns": [
+    {
+      "name": "列表页模式",
+      "type": "list_page",
+      "template": "el-table + el-pagination + search form",
+      "files": [
+        "src/views/{module}/list/{Module}List.vue"
+      ]
+    },
+    {
+      "name": "表单页模式",
+      "type": "form_page",
+      "template": "el-form + el-input/select/date-picker + submit button",
+      "files": [
+        "src/views/{module}/form/{Module}Form.vue"
+      ]
+    },
+    {
+      "name": "详情页模式",
+      "type": "detail_page",
+      "template": "el-descriptions + el-card + back button",
+      "files": [
+        "src/views/{module}/detail/{Module}Detail.vue"
+      ]
+    },
+    {
+      "name": "CRUD 模块模式",
+      "type": "crud_module",
+      "template": "api + store + composable + views",
+      "files": [
+        "src/api/{module}.ts",
+        "src/stores/{module}.ts",
+        "src/composables/use{Module}.ts",
+        "src/views/{module}/list/{Module}List.vue",
+        "src/views/{module}/form/{Module}Form.vue"
+      ]
+    }
+  ]
+}

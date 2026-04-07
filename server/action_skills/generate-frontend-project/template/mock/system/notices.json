@@ -1,0 +1,26 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {"id": 1, "title": "系统升级维护通知", "type": 1, "content": "尊敬的用户，系统将于本周六（3月9日）凌晨2:00-6:00进行升级维护，届时系统将暂停服务。请您提前做好相关准备工作，给您带来的不便敬请谅解。", "status": 1, "publisher": "系统管理员", "publishTime": "2024-03-01 10:00:00", "views": 156, "top": true, "important": true},
+      {"id": 2, "title": "新增数据导出功能", "type": 2, "content": "系统新增数据导出功能，支持Excel、CSV、PDF格式。用户可在数据列表页面点击导出按钮，选择导出格式和字段即可。详细使用说明请查看帮助文档。", "status": 1, "publisher": "产品部", "publishTime": "2024-02-28 14:30:00", "views": 89, "top": false, "important": false},
+      {"id": 3, "title": "密码安全策略更新", "type": 3, "content": "为提升账户安全，系统更新了密码策略：1.密码长度不得少于8位；2.必须包含大小写字母和数字；3.30天内未修改的密码需强制更新。请及时更新您的密码。", "status": 1, "publisher": "安全中心", "publishTime": "2024-02-25 09:00:00", "views": 234, "top": true, "important": true},
+      {"id": 4, "title": "移动端APP正式上线", "type": 2, "content": "企业管理系统移动端APP已正式上线，支持iOS和Android系统。您可以通过应用商店搜索\"企业管理系统\"下载安装，随时随地处理工作事务。", "status": 1, "publisher": "技术部", "publishTime": "2024-02-20 16:00:00", "views": 312, "top": false, "important": false},
+      {"id": 5, "title": "2024年春节放假安排", "type": 1, "content": "根据国家规定，2024年春节放假安排如下：2月10日至17日放假调休，共8天。2月4日（星期日）、2月18日（星期日）上班。放假期间如有问题可联系值班人员。", "status": 1, "publisher": "行政部", "publishTime": "2024-02-05 11:00:00", "views": 567, "top": true, "important": true},
+      {"id": 6, "title": "操作日志查询功能上线", "type": 2, "content": "系统新增操作日志查询功能，管理员可在系统管理-操作日志中查看所有用户的操作记录。支持按时间、操作类型、用户等条件筛选，方便追踪和审计。", "status": 1, "publisher": "产品部", "publishTime": "2024-01-30 15:30:00", "views": 145, "top": false, "important": false},
+      {"id": 7, "title": "数据备份提醒", "type": 3, "content": "系统将于每周日凌晨3:00自动进行数据备份。请确保服务器时间准确，备份文件将保存在指定目录。如需手动备份，请在系统管理-数据备份中进行操作。", "status": 1, "publisher": "运维部", "publishTime": "2024-01-25 10:00:00", "views": 98, "top": false, "important": false},
+      {"id": 8, "title": "新员工入职培训通知", "type": 4, "content": "为帮助新员工快速熟悉公司业务和系统操作，人力资源部定于2月15日14:00在培训室举行新员工入职培训，欢迎各位新同事参加。培训内容包括系统功能介绍、操作演示、答疑环节。", "status": 1, "publisher": "人力资源部", "publishTime": "2024-01-20 09:30:00", "views": 178, "top": false, "important": false},
+      {"id": 9, "title": "系统性能优化通知", "type": 2, "content": "本次版本更新对系统进行了性能优化，主要包括：1.页面加载速度提升30%；2.大数据量导出稳定性增强；3.缓存机制优化；4.数据库查询效率提升。建议用户清除浏览器缓存后使用。", "status": 1, "publisher": "技术部", "publishTime": "2024-01-15 16:00:00", "views": 256, "top": false, "important": false},
+      {"id": 10, "title": "账号安全提示", "type": 3, "content": "近期检测到部分账户存在异常登录行为，请各位用户：1.定期更换密码；2.不要在公共电脑上保存登录状态；3.发现异常立即联系管理员。账户安全关乎你我，共同维护信息安全环境。", "status": 1, "publisher": "安全中心", "publishTime": "2024-01-10 11:00:00", "views": 389, "top": true, "important": true},
+      {"id": 11, "title": "工作流程审批功能上线", "type": 2, "content": "系统新增工作流审批功能，支持自定义审批流程。用户可在工作流管理中创建审批流程，设置审批节点和审批人。适用于请假、报销、采购等日常审批场景。", "status": 1, "publisher": "产品部", "publishTime": "2024-01-05 14:00:00", "views": 223, "top": false, "important": false},
+      {"id": 12, "title": "元旦放假通知", "type": 1, "content": "根据国家规定，2024年元旦放假安排如下：1月1日（星期一）放假，与周末连休。放假期间如有问题可联系值班人员。祝大家节日快乐！", "status": 1, "publisher": "行政部", "publishTime": "2023-12-28 10:00:00", "views": 445, "top": true, "important": false},
+      {"id": 13, "title": "年度总结报告提交", "type": 4, "content": "请各部门于1月15日前提交2023年度工作总结报告。报告内容应包括：年度工作完成情况、存在的问题与不足、来年工作计划与建议。请发送至行政部邮箱。", "status": 1, "publisher": "行政部", "publishTime": "2023-12-20 09:00:00", "views": 167, "top": false, "important": false},
+      {"id": 14, "title": "系统权限调整说明", "type": 3, "content": "为满足业务发展需要，系统对部分功能权限进行了调整：1.市场部增加数据统计功能；2.客服部增加客户管理功能；3.调整了部分角色的菜单权限。如有疑问请联系管理员。", "status": 1, "publisher": "系统管理员", "publishTime": "2023-12-15 16:30:00", "views": 134, "top": false, "important": false},
+      {"id": 15, "title": "新版用户手册发布", "type": 2, "content": "系统新版用户手册已发布，包含完整的操作指南和常见问题解答。您可以在帮助中心-使用手册中查看，也可以下载PDF版本离线阅读。", "status": 1, "publisher": "产品部", "publishTime": "2023-12-10 11:00:00", "views": 198, "top": false, "important": false}
+    ],
+    "total": 15,
+    "pageNum": 1,
+    "pageSize": 20
+  },
+  "message": "获取成功"
+}

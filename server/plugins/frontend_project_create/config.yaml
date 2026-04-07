@@ -1,0 +1,27 @@
+info:
+  name: frontend-project-create
+  name_zh: OPPT:前端项目创建
+  description: 基于《前端项目生成文档》生成完整的 Vue 3 前端项目
+
+features:
+  skills: true
+  streaming: true
+
+llm:
+  model: gpt-4o
+  temperature: 0.7
+  max_tokens: 8192
+
+generation:
+  max_iterations: 100
+  retry_times: 3
+  timeout_seconds: 300
+
+verification:
+  enable_build: true
+  enable_runtime: true
+  enable_coverage: true
+
+memory:
+  short_term_ttl: 3600
+  long_term_path: server/data/frontend_project_knowledge

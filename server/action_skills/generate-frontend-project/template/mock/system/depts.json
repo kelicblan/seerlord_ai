@@ -1,0 +1,117 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "id": 1,
+      "name": "技术研发部",
+      "parentId": 0,
+      "sort": 1,
+      "leader": "系统管理员",
+      "phone": "010-88888801",
+      "email": "tech@example.com",
+      "status": 1,
+      "children": [
+        {"id": 101, "name": "前端组", "parentId": 1, "sort": 1, "leader": "王五", "phone": "010-88888811", "status": 1},
+        {"id": 102, "name": "后端组", "parentId": 1, "sort": 2, "leader": "赵六", "phone": "010-88888812", "status": 1},
+        {"id": 103, "name": "测试组", "parentId": 1, "sort": 3, "leader": "陈一", "phone": "010-88888813", "status": 1}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "产品设计部",
+      "parentId": 0,
+      "sort": 2,
+      "leader": "张三",
+      "phone": "010-88888802",
+      "email": "product@example.com",
+      "status": 1,
+      "children": [
+        {"id": 201, "name": "产品组", "parentId": 2, "sort": 1, "leader": "张三", "phone": "010-88888821", "status": 1},
+        {"id": 202, "name": "UI设计组", "parentId": 2, "sort": 2, "leader": "孙七", "phone": "010-88888822", "status": 1},
+        {"id": 203, "name": "UX设计组", "parentId": 2, "sort": 3, "leader": "袁生", "phone": "010-88888823", "status": 1}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "市场营销部",
+      "parentId": 0,
+      "sort": 3,
+      "leader": "方云",
+      "phone": "010-88888803",
+      "email": "marketing@example.com",
+      "status": 1,
+      "children": [
+        {"id": 301, "name": "市场推广组", "parentId": 3, "sort": 1, "leader": "李四", "phone": "010-88888831", "status": 1},
+        {"id": 302, "name": "品牌运营组", "parentId": 3, "sort": 2, "leader": "郑十", "phone": "010-88888832", "status": 0}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "人力资源部",
+      "parentId": 0,
+      "sort": 4,
+      "leader": "周八",
+      "phone": "010-88888804",
+      "email": "hr@example.com",
+      "status": 1,
+      "children": [
+        {"id": 401, "name": "招聘组", "parentId": 4, "sort": 1, "leader": "萧七", "phone": "010-88888841", "status": 1},
+        {"id": 402, "name": "培训组", "parentId": 4, "sort": 2, "leader": "周八", "phone": "010-88888842", "status": 1}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "财务部",
+      "parentId": 0,
+      "sort": 5,
+      "leader": "吴九",
+      "phone": "010-88888805",
+      "email": "finance@example.com",
+      "status": 1,
+      "children": [
+        {"id": 501, "name": "会计组", "parentId": 5, "sort": 1, "leader": "吴九", "phone": "010-88888851", "status": 1},
+        {"id": 502, "name": "出纳组", "parentId": 5, "sort": 2, "leader": "黄八", "phone": "010-88888852", "status": 0}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "客户服务部",
+      "parentId": 0,
+      "sort": 6,
+      "leader": "魏九",
+      "phone": "010-88888806",
+      "email": "service@example.com",
+      "status": 1,
+      "children": [
+        {"id": 601, "name": "售后组", "parentId": 6, "sort": 1, "leader": "刘二", "phone": "010-88888861", "status": 1},
+        {"id": 602, "name": "投诉组", "parentId": 6, "sort": 2, "leader": "魏九", "phone": "010-88888862", "status": 1}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "运营部",
+      "parentId": 0,
+      "sort": 7,
+      "leader": "石十",
+      "phone": "010-88888807",
+      "email": "operations@example.com",
+      "status": 1,
+      "children": [
+        {"id": 701, "name": "内容运营组", "parentId": 7, "sort": 1, "leader": "石十", "phone": "010-88888871", "status": 1},
+        {"id": 702, "name": "活动运营组", "parentId": 7, "sort": 2, "leader": "邓五", "phone": "010-88888872", "status": 1}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "行政部",
+      "parentId": 0,
+      "sort": 8,
+      "leader": "陈二",
+      "phone": "010-88888808",
+      "email": "admin@example.com",
+      "status": 1,
+      "children": []
+    }
+  ],
+  "message": "获取成功"
+}

@@ -1,0 +1,60 @@
+{
+  "error_patterns": [
+    {
+      "id": "ERR001",
+      "keywords": ["ERESOLVE", "peerDependencies", "override"],
+      "root_cause": "npm 依赖版本冲突",
+      "solutions": [
+        {
+          "action": "添加 package.json overrides",
+          "code": "{\"element-plus\": {\"@element-plus/icons-vue\": \"^0.3.0\"}}",
+          "success_rate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "ERR002",
+      "keywords": ["RUNTIME_RENDER_FAILED", "blank", "mount"],
+      "root_cause": "组件未正确注册",
+      "solutions": [
+        {
+          "action": "检查 main.ts 中是否正确导入并使用组件",
+          "code": "app.use(ElementPlus)",
+          "success_rate": 0.90
+        }
+      ]
+    },
+    {
+      "id": "ERR003",
+      "keywords": ["404", "module", "not found"],
+      "root_cause": "模块未找到",
+      "solutions": [
+        {
+          "action": "检查 vite.config.ts 的 alias 配置",
+          "code": "alias: { '@': resolve(__dirname, 'src') }",
+          "success_rate": 0.85
+        }
+      ]
+    }
+  ],
+  "generation_techniques": [
+    {
+      "id": "TECH001",
+      "task_type": "form_page",
+      "effective_pattern": "先定义类型 → 生成 Mock 数据 → 生成 API 层 → 生成表单逻辑 → 生成页面",
+      "success_rate": 0.92
+    },
+    {
+      "id": "TECH002",
+      "task_type": "list_page",
+      "effective_pattern": "使用 el-table + el-pagination 组合，分页参数与 store 同步",
+      "success_rate": 0.95
+    },
+    {
+      "id": "TECH003",
+      "task_type": "crud_module",
+      "effective_pattern": "api.ts → store.ts → composable.ts → views/page.vue",
+      "success_rate": 0.90
+    }
+  ]
+}

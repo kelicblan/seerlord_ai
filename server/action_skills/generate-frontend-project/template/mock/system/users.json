@@ -1,0 +1,33 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {"id": 1, "username": "admin", "realName": "系统管理员", "email": "admin@example.com", "phone": "13800138000", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 1, "name": "超级管理员"}], "createTime": "2024-01-01 10:00:00"},
+      {"id": 2, "username": "zhangsan", "realName": "张三", "email": "zhangsan@example.com", "phone": "13800138001", "status": 1, "deptId": 2, "deptName": "产品设计部", "roles": [{"id": 2, "name": "产品经理"}], "createTime": "2024-01-05 09:30:00"},
+      {"id": 3, "username": "lisi", "realName": "李四", "email": "lisi@example.com", "phone": "13800138002", "status": 1, "deptId": 3, "deptName": "市场营销部", "roles": [{"id": 3, "name": "市场专员"}], "createTime": "2024-01-08 14:20:00"},
+      {"id": 4, "username": "wangwu", "realName": "王五", "email": "wangwu@example.com", "phone": "13800138003", "status": 0, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 4, "name": "前端开发"}], "createTime": "2024-01-10 11:15:00"},
+      {"id": 5, "username": "zhaoliu", "realName": "赵六", "email": "zhaoliu@example.com", "phone": "13800138004", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 5, "name": "后端开发"}], "createTime": "2024-01-12 16:45:00"},
+      {"id": 6, "username": "sunqi", "realName": "孙七", "email": "sunqi@example.com", "phone": "13800138005", "status": 1, "deptId": 2, "deptName": "产品设计部", "roles": [{"id": 6, "name": "UI设计师"}], "createTime": "2024-01-15 08:00:00"},
+      {"id": 7, "username": "zhouba", "realName": "周八", "email": "zhouba@example.com", "phone": "13800138006", "status": 1, "deptId": 4, "deptName": "人力资源部", "roles": [{"id": 7, "name": "HR专员"}], "createTime": "2024-01-18 10:30:00"},
+      {"id": 8, "username": "wujiu", "realName": "吴九", "email": "wujiu@example.com", "phone": "13800138007", "status": 1, "deptId": 5, "deptName": "财务部", "roles": [{"id": 8, "name": "财务专员"}], "createTime": "2024-01-20 13:00:00"},
+      {"id": 9, "username": "zhengshi", "realName": "郑十", "email": "zhengshi@example.com", "phone": "13800138008", "status": 0, "deptId": 3, "deptName": "市场营销部", "roles": [{"id": 3, "name": "市场专员"}], "createTime": "2024-01-22 15:20:00"},
+      {"id": 10, "username": "chenyi", "realName": "陈一", "email": "chenyi@example.com", "phone": "13800138009", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 9, "name": "测试工程师"}], "createTime": "2024-01-25 09:00:00"},
+      {"id": 11, "username": "liuer", "realName": "刘二", "email": "liuer@example.com", "phone": "13800138010", "status": 1, "deptId": 6, "deptName": "客户服务部", "roles": [{"id": 10, "name": "客服专员"}], "createTime": "2024-01-28 11:45:00"},
+      {"id": 12, "username": "luosan", "realName": "罗三", "email": "luosan@example.com", "phone": "13800138011", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 5, "name": "后端开发"}], "createTime": "2024-02-01 08:30:00"},
+      {"id": 13, "username": "gaosi", "realName": "高四", "email": "gaosi@example.com", "phone": "13800138012", "status": 1, "deptId": 2, "deptName": "产品设计部", "roles": [{"id": 2, "name": "产品经理"}], "createTime": "2024-02-05 14:00:00"},
+      {"id": 14, "username": "dengwu", "realName": "邓五", "email": "dengwu@example.com", "phone": "13800138013", "status": 1, "deptId": 7, "deptName": "运营部", "roles": [{"id": 11, "name": "运营专员"}], "createTime": "2024-02-08 10:15:00"},
+      {"id": 15, "username": "caoliu", "realName": "曹六", "email": "caoliu@example.com", "phone": "13800138014", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 4, "name": "前端开发"}], "createTime": "2024-02-10 16:30:00"},
+      {"id": 16, "username": "xiaoqi", "realName": "萧七", "email": "xiaoqi@example.com", "phone": "13800138015", "status": 1, "deptId": 4, "deptName": "人力资源部", "roles": [{"id": 12, "name": "招聘专员"}], "createTime": "2024-02-12 09:20:00"},
+      {"id": 17, "username": "huangba", "realName": "黄八", "email": "huangba@example.com", "phone": "13800138016", "status": 0, "deptId": 5, "deptName": "财务部", "roles": [{"id": 8, "name": "财务专员"}], "createTime": "2024-02-15 13:45:00"},
+      {"id": 18, "username": "weijiu", "realName": "魏九", "email": "weijiu@example.com", "phone": "13800138017", "status": 1, "deptId": 6, "deptName": "客户服务部", "roles": [{"id": 10, "name": "客服专员"}], "createTime": "2024-02-18 11:00:00"},
+      {"id": 19, "username": "shishi", "realName": "石十", "email": "shishi@example.com", "phone": "13800138018", "status": 1, "deptId": 7, "deptName": "运营部", "roles": [{"id": 11, "name": "运营专员"}], "createTime": "2024-02-20 15:30:00"},
+      {"id": 20, "username": "gongyi", "realName": "龚一", "email": "gongyi@example.com", "phone": "13800138019", "status": 1, "deptId": 1, "deptName": "技术研发部", "roles": [{"id": 9, "name": "测试工程师"}], "createTime": "2024-02-22 08:45:00"},
+      {"id": 21, "username": "fangyun", "realName": "方云", "email": "fangyun@example.com", "phone": "13800138020", "status": 1, "deptId": 3, "deptName": "市场营销部", "roles": [{"id": 13, "name": "市场总监"}], "createTime": "2024-02-25 14:15:00"},
+      {"id": 22, "username": "yuansheng", "realName": "袁生", "email": "yuansheng@example.com", "phone": "13800138021", "status": 1, "ptId": 2, "deptName": "产品设计部", "roles": [{"id": 14, "name": "交互设计师"}], "createTime": "2024-02-28 10:00:00"}
+    ],
+    "total": 22,
+    "pageNum": 1,
+    "pageSize": 20
+  },
+  "message": "获取成功"
+}

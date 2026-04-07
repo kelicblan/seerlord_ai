@@ -1,0 +1,31 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {"id": 1, "username": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "device": "Windows 10 / Chrome", "os": "Windows 10", "browser": "Chrome 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 08:30:00", "logoutTime": "2024-03-01 18:00:00"},
+      {"id": 2, "username": "zhangsan", "ip": "192.168.1.105", "location": "北京市丰台区", "device": "macOS / Safari", "os": "macOS 14.0", "browser": "Safari 17.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 09:00:00", "logoutTime": "2024-03-01 18:30:00"},
+      {"id": 3, "username": "lisi", "ip": "192.168.1.106", "location": "北京市石景山区", "device": "iOS / Safari", "os": "iOS 17.0", "browser": "Safari Mobile", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 09:15:00", "logoutTime": ""},
+      {"id": 4, "username": "wangwu", "ip": "192.168.1.107", "location": "北京市通州区", "device": "Windows 11 / Firefox", "os": "Windows 11", "browser": "Firefox 121.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 09:30:00", "logoutTime": "2024-03-01 17:45:00"},
+      {"id": 5, "username": "zhaoliu", "ip": "192.168.1.108", "location": "北京市大兴区", "device": "Ubuntu / Chrome", "os": "Ubuntu 22.04", "browser": "Chrome 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 10:00:00", "logoutTime": "2024-03-01 19:00:00"},
+      {"id": 6, "username": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "device": "Windows 10 / Chrome", "os": "Windows 10", "browser": "Chrome 120.0", "status": 0, "message": "密码错误", "loginTime": "2024-03-01 10:30:00", "logoutTime": ""},
+      {"id": 7, "username": "testuser", "ip": "192.168.1.109", "location": "北京市顺义区", "device": "Android / Chrome", "os": "Android 14", "browser": "Chrome Mobile", "status": 0, "message": "用户不存在", "loginTime": "2024-03-01 11:00:00", "logoutTime": ""},
+      {"id": 8, "username": "sunqi", "ip": "192.168.1.110", "location": "北京市房山区", "device": "macOS / Chrome", "os": "macOS 13.0", "browser": "Chrome 119.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 11:30:00", "logoutTime": "2024-03-01 18:15:00"},
+      {"id": 9, "username": "zhouba", "ip": "192.168.1.111", "location": "北京市门头沟区", "device": "Windows 10 / Edge", "os": "Windows 10", "browser": "Edge 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 13:00:00", "logoutTime": "2024-03-01 17:30:00"},
+      {"id": 10, "username": "wujiu", "ip": "192.168.1.112", "location": "北京市怀柔区", "device": "Windows 10 / Chrome", "os": "Windows 10", "browser": "Chrome 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 14:00:00", "logoutTime": "2024-03-01 18:00:00"},
+      {"id": 11, "username": "chenyi", "ip": "192.168.1.113", "location": "北京市平谷区", "device": "macOS / Firefox", "os": "macOS 14.0", "browser": "Firefox 121.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 14:30:00", "logoutTime": "2024-03-01 19:30:00"},
+      {"id": 12, "username": "liuer", "ip": "192.168.1.114", "location": "北京市密云区", "device": "iPad / Safari", "os": "iPadOS 17.0", "browser": "Safari", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 15:00:00", "logoutTime": ""},
+      {"id": 13, "username": "admin", "ip": "192.168.1.115", "location": "北京市延庆区", "device": "Windows 11 / Chrome", "os": "Windows 11", "browser": "Chrome 121.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 15:30:00", "logoutTime": "2024-03-01 22:00:00"},
+      {"id": 14, "username": "luosan", "ip": "192.168.1.116", "location": "天津市南开区", "device": "Ubuntu / Chrome", "os": "Ubuntu 22.04", "browser": "Chrome 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 16:00:00", "logoutTime": "2024-03-01 20:00:00"},
+      {"id": 15, "username": "gaosi", "ip": "192.168.1.117", "location": "天津市和平区", "device": "macOS / Safari", "os": "macOS 14.0", "browser": "Safari 17.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 16:30:00", "logoutTime": "2024-03-01 19:45:00"},
+      {"id": 16, "username": "invaliduser", "ip": "192.168.1.118", "location": "天津市河西区", "device": "Windows 10 / Chrome", "os": "Windows 10", "browser": "Chrome 120.0", "status": 0, "message": "账号已被禁用", "loginTime": "2024-03-01 17:00:00", "logoutTime": ""},
+      {"id": 17, "username": "dengwu", "ip": "192.168.1.119", "location": "天津市河北区", "device": "Windows 10 / Edge", "os": "Windows 10", "browser": "Edge 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 17:30:00", "logoutTime": "2024-03-01 21:00:00"},
+      {"id": 18, "username": "caoliu", "ip": "192.168.1.120", "location": "天津市塘沽区", "device": "macOS / Chrome", "os": "macOS 13.0", "browser": "Chrome 119.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-01 18:00:00", "logoutTime": "2024-03-01 22:30:00"},
+      {"id": 19, "username": "xiaoqi", "ip": "192.168.1.121", "location": "河北省廊坊市", "device": "Windows 10 / Chrome", "os": "Windows 10", "browser": "Chrome 120.0", "status": 1, "message": "登录成功", "loginTime": "2024-03-02 08:00:00", "logoutTime": "2024-03-02 18:00:00"},
+      {"id": 20, "username": "huangba", "ip": "192.168.1.122", "location": "河北省保定市", "device": "Android / Chrome", "os": "Android 14", "browser": "Chrome Mobile", "status": 0, "message": "密码错误", "loginTime": "2024-03-02 08:30:00", "logoutTime": ""}
+    ],
+    "total": 200,
+    "pageNum": 1,
+    "pageSize": 20
+  },
+  "message": "获取成功"
+}

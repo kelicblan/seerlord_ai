@@ -1,0 +1,31 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {"id": 1, "module": "用户管理", "operation": "创建用户", "method": "POST", "url": "/api/system/users", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"username\":\"testuser\",\"email\":\"test@example.com\"}", "result": "成功", "status": 1, "createTime": "2024-03-01 10:15:23"},
+      {"id": 2, "module": "角色管理", "operation": "分配角色", "method": "PUT", "url": "/api/system/users/5/roles", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"roleIds\":[4,5]}", "result": "成功", "status": 1, "createTime": "2024-03-01 11:20:35"},
+      {"id": 3, "module": "部门管理", "operation": "修改部门", "method": "PUT", "url": "/api/system/depts/101", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"name\":\"前端开发组\",\"leader\":\"王五\"}", "result": "成功", "status": 1, "createTime": "2024-03-01 14:05:18"},
+      {"id": 4, "module": "权限管理", "operation": "修改权限", "method": "PUT", "url": "/api/system/roles/4/menus", "operator": "admin", "ip": "192.168.1.101", "location": "北京市朝阳区", "params": "{\"menuIds\":[1,2,16,17,18]}", "result": "成功", "status": 1, "createTime": "2024-03-01 15:30:42"},
+      {"id": 5, "module": "系统配置", "operation": "更新配置", "method": "PUT", "url": "/api/system/configs/site", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"siteName\":\"新系统名称\",\"siteLogo\":\"/uploads/logo.png\"}", "result": "成功", "status": 1, "createTime": "2024-03-01 16:45:09"},
+      {"id": 6, "module": "用户管理", "operation": "删除用户", "method": "DELETE", "url": "/api/system/users/9", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{}", "result": "成功", "status": 1, "createTime": "2024-03-02 09:12:33"},
+      {"id": 7, "module": "数据备份", "operation": "手动备份", "method": "POST", "url": "/api/system/backup", "operator": "admin", "ip": "192.168.1.102", "location": "北京市昌平区", "params": "{\"type\":\"full\",\"compress\":true}", "result": "成功", "status": 1, "createTime": "2024-03-02 10:00:00"},
+      {"id": 8, "module": "登录日志", "operation": "用户登录", "method": "POST", "url": "/api/auth/login", "operator": "zhangsan", "ip": "192.168.1.105", "location": "北京市丰台区", "params": "{\"username\":\"zhangsan\"}", "result": "成功", "status": 1, "createTime": "2024-03-02 11:30:15"},
+      {"id": 9, "module": "登录日志", "operation": "用户登出", "method": "POST", "url": "/api/auth/logout", "operator": "lisi", "ip": "192.168.1.106", "location": "北京市石景山区", "params": "{}", "result": "成功", "status": 1, "createTime": "2024-03-02 12:00:00"},
+      {"id": 10, "module": "公告管理", "operation": "发布公告", "method": "POST", "url": "/api/system/notices", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"title\":\"系统升级通知\",\"content\":\"将于本周六进行系统升级...\"}", "result": "成功", "status": 1, "createTime": "2024-03-02 13:20:45"},
+      {"id": 11, "module": "文件上传", "operation": "上传文件", "method": "POST", "url": "/api/upload/file", "operator": "wangwu", "ip": "192.168.1.107", "location": "北京市通州区", "params": "{\"fileName\":\"report.pdf\",\"fileSize\":2048576}", "result": "成功", "status": 1, "createTime": "2024-03-02 14:15:30"},
+      {"id": 12, "module": "数据导入", "operation": "批量导入", "method": "POST", "url": "/api/system/users/import", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"fileName\":\"users_import.xlsx\",\"count\":50}", "result": "部分成功", "status": 1, "createTime": "2024-03-02 15:00:00"},
+      {"id": 13, "module": "数据导出", "operation": "导出数据", "method": "GET", "url": "/api/system/users/export", "operator": "zhaoliu", "ip": "192.168.1.108", "location": "北京市大兴区", "params": "{\"format\":\"xlsx\",\"fields\":[\"id\",\"username\",\"email\"]}", "result": "成功", "status": 1, "createTime": "2024-03-02 16:30:20"},
+      {"id": 14, "module": "用户管理", "operation": "禁用用户", "method": "PUT", "url": "/api/system/users/4/disable", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"disabled\":true,\"reason\":\"长期未使用\"}", "result": "成功", "status": 1, "createTime": "2024-03-02 17:00:00"},
+      {"id": 15, "module": "密码管理", "operation": "重置密码", "method": "PUT", "url": "/api/system/users/6/password", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"userId\":6}", "result": "成功", "status": 1, "createTime": "2024-03-03 09:30:00"},
+      {"id": 16, "module": "角色管理", "operation": "删除角色", "method": "DELETE", "url": "/api/system/roles/16", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{}", "result": "失败", "status": 0, "error": "该角色下存在用户，无法删除", "createTime": "2024-03-03 10:45:00"},
+      {"id": 17, "module": "菜单管理", "operation": "添加菜单", "method": "POST", "url": "/api/system/menus", "operator": "admin", "ip": "192.168.1.101", "location": "北京市朝阳区", "params": "{\"name\":\"新菜单\",\"path\":\"/new-menu\",\"icon\":\"menu\",\"type\":1}", "result": "成功", "status": 1, "createTime": "2024-03-03 11:15:30"},
+      {"id": 18, "module": "字典管理", "operation": "修改字典", "method": "PUT", "url": "/api/system/dicts/gender", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{\"items\":[{\"label\":\"男\",\"value\":\"1\"},{\"label\":\"女\",\"value\":\"2\"}]}", "result": "成功", "status": 1, "createTime": "2024-03-03 14:00:00"},
+      {"id": 19, "module": "缓存管理", "operation": "清除缓存", "method": "DELETE", "url": "/api/system/cache", "operator": "admin", "ip": "192.168.1.102", "location": "北京市昌平区", "params": "{\"keys\":\"user:*\",\"pattern\":\"user:*\"}", "result": "成功", "status": 1, "createTime": "2024-03-03 15:30:00"},
+      {"id": 20, "module": "系统监控", "operation": "查看监控", "method": "GET", "url": "/api/system/monitor/server", "operator": "admin", "ip": "192.168.1.100", "location": "北京市海淀区", "params": "{}", "result": "成功", "status": 1, "createTime": "2024-03-03 16:45:00"}
+    ],
+    "total": 150,
+    "pageNum": 1,
+    "pageSize": 20
+  },
+  "message": "获取成功"
+}
